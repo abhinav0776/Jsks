@@ -4,7 +4,7 @@ All 100+ features in a single file
 Features: Career, Teams, Matches, Economy, Achievements, and more!
 """
 
-import discord
+import discord.py
 from discord.ext import commands, tasks
 import sqlite3
 import json
