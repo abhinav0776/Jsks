@@ -555,6 +555,340 @@ async def wallet(ctx, member: discord.Member = None):
     embed.add_field(name="💰 Net Worth", value=f"${net_worth:,}", inline=True)
     
     await ctx.send(embed=embed)
+# Buy Stock Command
+@bot.hybrid_command(name='buystock', aliases=['bs'], description='Buy stock of a user')
+async def buystock(ctx, member: discord.Member, amount: int):
+    """Buy stock/shares of a user"""
+    
+    if member.bot:
+        await ctx.send("❌ Cannot buy stock of bots!")
+        return
+    
+    if member.id == ctx.author.id:
+        await ctx.send("❌ Cannot buy your own stock!")
+        return
+    
+    if amount <= 0:
+        await ctx.send("❌ Amount must be positive!")
+        return
+    
+    player_data = get_player_data(ctx.author.id, ctx.guild.id)
+    current_price = get_stock_price(member.id, ctx.guild.id)
+    
+    # Calculate cost (price per share * amount)
+    total_cost = current_price * amount
+    
+    if player_data['balance'] < total_cost:
+        await ctx.send(f"❌ Insufficient funds! You need ${total_cost:,} but have ${player_data['balance']:,}")
+        return
+    
+    # Deduct balance
+    player_data['balance'] -= total_cost
+    
+    # Add to portfolio
+    if 'stocks_owned' not in player_data:
+        player_data['stocks_owned'] = {}
+    
+    stock_key = str(member.id)
+    if stock_key in player_data['stocks_owned']:
+        player_data['stocks_owned'][stock_key]['amount'] += amount
+        player_data['stocks_owned'][stock_key]['total_invested'] += total_cost
+    else:
+        player_data['stocks_owned'][stock_key] = {
+            'user_id': member.id,
+            'username': str(member),
+            'amount': amount,
+            'buy_price': current_price,
+            'total_invested': total_cost,
+            'purchased_at': datetime.now().isoformat()
+        }
+    
+    update_player_data(ctx.author.id, ctx.guild.id, player_data)
+    
+    # Increase stock price slightly (2%)
+    new_price = int(current_price * 1.02)
+    update_stock_price(member.id, ctx.guild.id, new_price)
+    
+    log_transaction(ctx.guild.id, 'stock_purchase', {
+        'buyer': str(ctx.author),
+        'target': str(member),
+        'amount': amount,
+        'total_cost': total_cost
+    })
+    
+    embed = discord.Embed(
+        title="✅ Stock Purchased!",
+        description=f"You bought {amount} shares of {member.mention}",
+        color=discord.Color.green()
+    )
+    
+    embed.add_field(name="Price per Share", value=f"${current_price:,}", inline=True)
+    embed.add_field(name="Total Cost", value=f"${total_cost:,}", inline=True)
+    embed.add_field(name="New Stock Price", value=f"${new_price:,} (+2%)", inline=True)
+    embed.add_field(name="Remaining Balance", value=f"${player_data['balance']:,}", inline=True)
+    
+    await ctx.send(embed=embed)
+
+# Sell Stock Command
+@bot.hybrid_command(name='sellstock', aliases=['ss'], description='Sell stock of a user')
+async def sellstock(ctx, member: discord.Member, amount: int):
+    """Sell stock/shares of a user"""
+    
+    if amount <= 0:
+        await ctx.send("❌ Amount must be positive!")
+        return
+    
+    player_data = get_player_data(ctx.author.id, ctx.guild.id)
+    
+    if 'stocks_owned' not in player_data or str(member.id) not in player_data['stocks_owned']:
+        await ctx.send(f"❌ You don't own any stock of {member.display_name}!")
+        return
+    
+    stock_key = str(member.id)
+    owned_stock = player_data['stocks_owned'][stock_key]
+    
+    if owned_stock['amount'] < amount:
+        await ctx.send(f"❌ You only own {owned_stock['amount']} shares of {member.display_name}!")
+        return
+    
+    current_price = get_stock_price(member.id, ctx.guild.id)
+    
+    # Calculate sale value (85% of current price to simulate market friction)
+    sale_price = int(current_price * 0.85)
+    total_earnings = sale_price * amount
+    
+    # Calculate profit/loss
+    avg_buy_price = owned_stock['total_invested'] / owned_stock['amount']
+    profit = (sale_price - avg_buy_price) * amount
+    
+    # Update balance
+    player_data['balance'] += total_earnings
+    
+    # Update stock holdings
+    owned_stock['amount'] -= amount
+    owned_stock['total_invested'] -= (avg_buy_price * amount)
+    
+    if owned_stock['amount'] == 0:
+        del player_data['stocks_owned'][stock_key]
+    
+    update_player_data(ctx.author.id, ctx.guild.id, player_data)
+    
+    # Decrease stock price slightly (1.5%)
+    new_price = int(current_price * 0.985)
+    update_stock_price(member.id, ctx.guild.id, new_price)
+    
+    log_transaction(ctx.guild.id, 'stock_sale', {
+        'seller': str(ctx.author),
+        'target': str(member),
+        'amount': amount,
+        'total_earnings': total_earnings,
+        'profit': profit
+    })
+    
+    embed = discord.Embed(
+        title="💰 Stock Sold!",
+        description=f"You sold {amount} shares of {member.mention}",
+        color=discord.Color.orange()
+    )
+    
+    embed.add_field(name="Sale Price per Share", value=f"${sale_price:,} (85% of market)", inline=True)
+    embed.add_field(name="Total Earnings", value=f"${total_earnings:,}", inline=True)
+    embed.add_field(name="Profit/Loss", value=f"${profit:+,}", inline=True)
+    embed.add_field(name="New Balance", value=f"${player_data['balance']:,}", inline=True)
+    embed.add_field(name="New Stock Price", value=f"${new_price:,} (-1.5%)", inline=True)
+    
+    await ctx.send(embed=embed)
+
+# Buy Team Stock Command
+@bot.hybrid_command(name='buyteamstock', aliases=['bts'], description='Buy stock of a team')
+async def buyteamstock(ctx, team_name: str, amount: int):
+    """Buy stock/shares of a team"""
+    
+    if amount <= 0:
+        await ctx.send("❌ Amount must be positive!")
+        return
+    
+    # Find team
+    teams = load_json(TEAMS_FILE)
+    team_found = None
+    team_key = None
+    
+    for key, team in teams.items():
+        if team['guild_id'] == ctx.guild.id and team['name'].lower() == team_name.lower():
+            team_found = team
+            team_key = key
+            break
+    
+    if not team_found:
+        await ctx.send(f"❌ Team '{team_name}' not found! Use `+teamlist` to see all teams.")
+        return
+    
+    player_data = get_player_data(ctx.author.id, ctx.guild.id)
+    
+    # Calculate team stock price (based on squad value)
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    owner_key = f"{ctx.guild.id}_{team_found['owner_id']}"
+    
+    team_value = 5000  # Base value
+    if owner_key in fantasy_teams:
+        for player in fantasy_teams[owner_key]['players']:
+            team_value += get_stock_price(player['user_id'], ctx.guild.id)
+    
+    # Get or create team stock price
+    stocks = load_json(STOCKS_FILE)
+    team_stock_key = f"team_{ctx.guild.id}_{team_key}"
+    
+    if team_stock_key not in stocks:
+        stocks[team_stock_key] = {
+            'team_id': team_key,
+            'price': team_value,
+            'change_percent': 0
+        }
+        save_json(STOCKS_FILE, stocks)
+    
+    team_stock_price = stocks[team_stock_key]['price']
+    total_cost = team_stock_price * amount
+    
+    if player_data['balance'] < total_cost:
+        await ctx.send(f"❌ Insufficient funds! You need ${total_cost:,} but have ${player_data['balance']:,}")
+        return
+    
+    # Deduct balance
+    player_data['balance'] -= total_cost
+    
+    # Add to portfolio
+    if 'team_stocks_owned' not in player_data:
+        player_data['team_stocks_owned'] = {}
+    
+    if team_key in player_data['team_stocks_owned']:
+        player_data['team_stocks_owned'][team_key]['amount'] += amount
+        player_data['team_stocks_owned'][team_key]['total_invested'] += total_cost
+    else:
+        player_data['team_stocks_owned'][team_key] = {
+            'team_id': team_key,
+            'team_name': team_found['name'],
+            'amount': amount,
+            'buy_price': team_stock_price,
+            'total_invested': total_cost,
+            'purchased_at': datetime.now().isoformat()
+        }
+    
+    update_player_data(ctx.author.id, ctx.guild.id, player_data)
+    
+    # Increase team stock price (3%)
+    new_price = int(team_stock_price * 1.03)
+    stocks[team_stock_key]['price'] = new_price
+    stocks[team_stock_key]['change_percent'] = 3.0
+    save_json(STOCKS_FILE, stocks)
+    
+    log_transaction(ctx.guild.id, 'team_stock_purchase', {
+        'buyer': str(ctx.author),
+        'team': team_found['name'],
+        'amount': amount,
+        'total_cost': total_cost
+    })
+    
+    embed = discord.Embed(
+        title="✅ Team Stock Purchased!",
+        description=f"You bought {amount} shares of **{team_found['name']}**",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(name="Price per Share", value=f"${team_stock_price:,}", inline=True)
+    embed.add_field(name="Total Cost", value=f"${total_cost:,}", inline=True)
+    embed.add_field(name="New Stock Price", value=f"${new_price:,} (+3%)", inline=True)
+    embed.add_field(name="Remaining Balance", value=f"${player_data['balance']:,}", inline=True)
+    
+    await ctx.send(embed=embed)
+
+# Sell Team Stock Command
+@bot.hybrid_command(name='sellteamstock', aliases=['sts'], description='Sell stock of a team')
+async def sellteamstock(ctx, team_name: str, amount: int):
+    """Sell stock/shares of a team"""
+    
+    if amount <= 0:
+        await ctx.send("❌ Amount must be positive!")
+        return
+    
+    # Find team
+    teams = load_json(TEAMS_FILE)
+    team_found = None
+    team_key = None
+    
+    for key, team in teams.items():
+        if team['guild_id'] == ctx.guild.id and team['name'].lower() == team_name.lower():
+            team_found = team
+            team_key = key
+            break
+    
+    if not team_found:
+        await ctx.send(f"❌ Team '{team_name}' not found!")
+        return
+    
+    player_data = get_player_data(ctx.author.id, ctx.guild.id)
+    
+    if 'team_stocks_owned' not in player_data or team_key not in player_data['team_stocks_owned']:
+        await ctx.send(f"❌ You don't own any stock of **{team_found['name']}**!")
+        return
+    
+    owned_stock = player_data['team_stocks_owned'][team_key]
+    
+    if owned_stock['amount'] < amount:
+        await ctx.send(f"❌ You only own {owned_stock['amount']} shares of **{team_found['name']}**!")
+        return
+    
+    # Get current team stock price
+    stocks = load_json(STOCKS_FILE)
+    team_stock_key = f"team_{ctx.guild.id}_{team_key}"
+    current_price = stocks.get(team_stock_key, {}).get('price', 5000)
+    
+    # Calculate sale value (80% of current price for teams)
+    sale_price = int(current_price * 0.80)
+    total_earnings = sale_price * amount
+    
+    # Calculate profit/loss
+    avg_buy_price = owned_stock['total_invested'] / owned_stock['amount']
+    profit = (sale_price - avg_buy_price) * amount
+    
+    # Update balance
+    player_data['balance'] += total_earnings
+    
+    # Update stock holdings
+    owned_stock['amount'] -= amount
+    owned_stock['total_invested'] -= (avg_buy_price * amount)
+    
+    if owned_stock['amount'] == 0:
+        del player_data['team_stocks_owned'][team_key]
+    
+    update_player_data(ctx.author.id, ctx.guild.id, player_data)
+    
+    # Decrease team stock price (2%)
+    new_price = int(current_price * 0.98)
+    stocks[team_stock_key]['price'] = new_price
+    stocks[team_stock_key]['change_percent'] = -2.0
+    save_json(STOCKS_FILE, stocks)
+    
+    log_transaction(ctx.guild.id, 'team_stock_sale', {
+        'seller': str(ctx.author),
+        'team': team_found['name'],
+        'amount': amount,
+        'total_earnings': total_earnings,
+        'profit': profit
+    })
+    
+    embed = discord.Embed(
+        title="💰 Team Stock Sold!",
+        description=f"You sold {amount} shares of **{team_found['name']}**",
+        color=discord.Color.orange()
+    )
+    
+    embed.add_field(name="Sale Price per Share", value=f"${sale_price:,} (80% of market)", inline=True)
+    embed.add_field(name="Total Earnings", value=f"${total_earnings:,}", inline=True)
+    embed.add_field(name="Profit/Loss", value=f"${profit:+,}", inline=True)
+    embed.add_field(name="New Balance", value=f"${player_data['balance']:,}", inline=True)
+    embed.add_field(name="New Stock Price", value=f"${new_price:,} (-2%)", inline=True)
+    
+    await ctx.send(embed=embed)
 # Remove Balance (Admin only)
 @bot.hybrid_command(name='removebalance', aliases=['rb'], description='Remove balance from a user (Admin only)')
 @commands.has_permissions(administrator=True)
