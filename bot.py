@@ -1,3 +1,4 @@
+```python
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -5,6 +6,9 @@ import json
 import os
 from datetime import datetime
 import random
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import aiohttp
 
 # Bot setup
 intents = discord.Intents.default()
@@ -23,6 +27,10 @@ STOCKS_FILE = f'{DATA_DIR}/stocks.json'
 TRANSACTIONS_FILE = f'{DATA_DIR}/transactions.json'
 CONFIG_FILE = f'{DATA_DIR}/config.json'
 BANS_FILE = f'{DATA_DIR}/bans.json'
+MATCHES_FILE = f'{DATA_DIR}/matches.json'
+PREDICTIONS_FILE = f'{DATA_DIR}/predictions.json'
+TRANSFERS_FILE = f'{DATA_DIR}/transfers.json'
+LOANS_FILE = f'{DATA_DIR}/loans.json'
 
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -36,7 +44,11 @@ def init_data_files():
         STOCKS_FILE: {},
         TRANSACTIONS_FILE: [],
         BANS_FILE: {},
-        CONFIG_FILE: {'servers': {}}
+        CONFIG_FILE: {'servers': {}},
+        MATCHES_FILE: {},
+        PREDICTIONS_FILE: {},
+        TRANSFERS_FILE: {},
+        LOANS_FILE: {}
     }
     for file_path, default_data in files.items():
         if not os.path.exists(file_path):
@@ -62,8 +74,8 @@ def get_server_config(guild_id):
             'prefix': '+',
             'transaction_channel': None,
             'team_logs_channel': None,
-            'starting_balance': 100000000,
-            'base_card_value': 10000000,
+            'starting_balance': 50000,
+            'base_card_value': 1000,
             'max_fantasy_size': 11,
             'min_fantasy_size': 5
         }
@@ -166,7 +178,8 @@ async def tutorial(ctx):
                         {'name': '+balance or +bal', 'value': 'Check your current balance', 'inline': False},
                         {'name': '+daily', 'value': 'Claim your daily reward', 'inline': False},
                         {'name': '+addbalance @user <amount>', 'value': 'Add balance to a user (Admin only)', 'inline': False},
-                        {'name': '+removebalance @user <amount>', 'value': 'Remove balance from a user (Admin only)', 'inline': False}
+                        {'name': '+removebalance @user <amount>', 'value': 'Remove balance from a user (Admin only)', 'inline': False},
+                        {'name': '+card @user', 'value': 'Generate player card for a user', 'inline': False}
                     ]
                 },
                 {
@@ -200,7 +213,19 @@ async def tutorial(ctx):
                         {'name': '+updatefantasyprices or +ufp', 'value': 'Update all fantasy player prices (Admin only)', 'inline': False},
                         {'name': '+setcardvalue @user <amount>', 'value': 'Set card value for a user (Admin only)', 'inline': False},
                         {'name': '+invest @user <amount>', 'value': 'Invest in a user\'s card', 'inline': False},
-                        {'name': '+market', 'value': 'View the transfer market', 'inline': False}
+                        {'name': '+market', 'value': 'View the transfer market', 'inline': False},
+                        {'name': '+transfer @user @team_owner', 'value': 'Initiate transfer to another team', 'inline': False},
+                        {'name': '+loan @user @team_owner', 'value': 'Initiate loan to another team', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '⚽ Match & Predictions',
+                    'description': 'Predict match outcomes',
+                    'fields': [
+                        {'name': '+predictmatchadd <team1> vs <team2>', 'value': 'Add a match for predictions (Admin)', 'inline': False},
+                        {'name': '+matchremove <match_id>', 'value': 'Remove a match (Admin)', 'inline': False},
+                        {'name': '+predict <match_id> <team_name>', 'value': 'Predict match winner', 'inline': False},
+                        {'name': '+predictions', 'value': 'View all active matches', 'inline': False}
                     ]
                 },
                 {
@@ -366,6 +391,74 @@ async def removebalance(ctx, member: discord.Member, amount: int):
     
     await ctx.send(f"✅ Removed ${amount:,} from {member.mention}. New balance: ${player_data['balance']:,}")
 
+# Card Command
+@bot.hybrid_command(name='card', description='Generate player card')
+async def card(ctx, member: discord.Member = None):
+    """Generate a player card image"""
+    target = member or ctx.author
+    
+    if target.bot:
+        await ctx.send("❌ Cannot generate cards for bots!")
+        return
+    
+    player_data = get_player_data(target.id, ctx.guild.id)
+    current_price = get_stock_price(target.id, ctx.guild.id)
+    
+    # Create card image
+    img = Image.new('RGB', (400, 600), color=(30, 30, 30))
+    draw = ImageDraw.Draw(img)
+    
+    # Try to use default font
+    try:
+        font_large = ImageFont.truetype("arial.ttf", 40)
+        font_medium = ImageFont.truetype("arial.ttf", 30)
+        font_small = ImageFont.truetype("arial.ttf", 20)
+    except:
+        font_large = ImageFont.load_default()
+        font_medium = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+    
+    # Draw card border
+    draw.rectangle([(10, 10), (390, 590)], outline=(255, 215, 0), width=5)
+    
+    # Draw header
+    draw.rectangle([(10, 10), (390, 100)], fill=(255, 215, 0))
+    draw.text((200, 55), "PLAYER CARD", font=font_medium, fill=(0, 0, 0), anchor="mm")
+    
+    # Draw player name
+    draw.text((200, 150), target.display_name[:20], font=font_large, fill=(255, 255, 255), anchor="mm")
+    
+    # Draw stats
+    stats = [
+        f"Balance: ${player_data['balance']:,}",
+        f"Card Value: ${current_price:,}",
+        f"Rating: {random.randint(60, 99)}"
+    ]
+    
+    y_pos = 250
+    for stat in stats:
+        draw.text((200, y_pos), stat, font=font_small, fill=(255, 255, 255), anchor="mm")
+        y_pos += 50
+    
+    # Draw team info if exists
+    if player_data.get('team_id'):
+        teams = load_json(TEAMS_FILE)
+        team_key = f"{ctx.guild.id}_{player_data['team_id']}"
+        if team_key in teams:
+            draw.text((200, 450), f"Team: {teams[team_key]['name'][:25]}", font=font_small, fill=(255, 255, 255), anchor="mm")
+    
+    # Draw footer
+    draw.rectangle([(10, 500), (390, 590)], fill=(50, 50, 50))
+    draw.text((200, 545), f"ID: {target.id}", font=font_small, fill=(200, 200, 200), anchor="mm")
+    
+    # Save to bytes
+    img_bytes = BytesIO()
+    img.save(img_bytes, format='PNG')
+    img_bytes.seek(0)
+    
+    file = discord.File(img_bytes, filename=f"{target.display_name}_card.png")
+    await ctx.send(file=file)
+
 # Create Team
 @bot.hybrid_command(name='createteam', description='Create your football team')
 async def createteam(ctx, *, team_name: str):
@@ -527,7 +620,7 @@ async def teamlist(ctx):
         color=discord.Color.blue()
     )
     
-    for i, team in enumerate(guild_teams[:25], 1):  # Discord limit
+    for i, team in enumerate(guild_teams[:25], 1):
         owner = ctx.guild.get_member(team['owner_id'])
         owner_name = owner.mention if owner else "Unknown"
         embed.add_field(
@@ -595,7 +688,7 @@ async def deletefantasy(ctx):
     # Refund all players
     player_data = get_player_data(ctx.author.id, ctx.guild.id)
     for player in fantasy_teams[key]['players']:
-        player_data['balance'] += int(player['price'] * 0.5)  # 50% refund
+        player_data['balance'] += int(player['price'] * 0.5)
     
     update_player_data(ctx.author.id, ctx.guild.id, player_data)
     
@@ -609,12 +702,10 @@ async def deletefantasy(ctx):
 async def buyfantasy(ctx, member: discord.Member):
     """Buy a fantasy player (real user)"""
     
-    # Check if buying yourself
     if member.id == ctx.author.id:
         await ctx.send("❌ You cannot buy yourself!")
         return
     
-    # Check if user is a bot
     if member.bot:
         await ctx.send("❌ You cannot buy bot cards!")
         return
@@ -634,24 +725,20 @@ async def buyfantasy(ctx, member: discord.Member):
     
     config = get_server_config(ctx.guild.id)
     
-    # Check squad size
     if len(fantasy_teams[key]['players']) >= config['max_fantasy_size']:
         await ctx.send(f"❌ Squad is full! Maximum size is {config['max_fantasy_size']} players.")
         return
     
-    # Check if already owned
     if any(p['user_id'] == member.id for p in fantasy_teams[key]['players']):
         await ctx.send(f"❌ You already own {member.display_name}'s card!")
         return
     
-    # Get price
     price = get_stock_price(member.id, ctx.guild.id)
     
     if player_data['balance'] < price:
         await ctx.send(f"❌ Insufficient funds! You need ${price:,} but have ${player_data['balance']:,}")
         return
     
-    # Complete purchase
     player_data['balance'] -= price
     update_player_data(ctx.author.id, ctx.guild.id, player_data)
     
@@ -665,7 +752,6 @@ async def buyfantasy(ctx, member: discord.Member):
     })
     save_json(FANTASY_TEAMS_FILE, fantasy_teams)
     
-    # Update stock price (increase by 5%)
     new_price = int(price * 1.05)
     update_stock_price(member.id, ctx.guild.id, new_price)
     
@@ -700,7 +786,6 @@ async def sellfantasy(ctx, member: discord.Member):
         await ctx.send("❌ You don't have a fantasy squad!")
         return
     
-    # Find player in squad
     player_found = None
     for i, player in enumerate(fantasy_teams[key]['players']):
         if player['user_id'] == member.id:
@@ -711,7 +796,6 @@ async def sellfantasy(ctx, member: discord.Member):
         await ctx.send(f"❌ {member.display_name}'s card is not in your squad!")
         return
     
-    # Sell for 80% of current market price
     current_price = get_stock_price(member.id, ctx.guild.id)
     sell_price = int(current_price * 0.8)
     
@@ -720,7 +804,6 @@ async def sellfantasy(ctx, member: discord.Member):
     update_player_data(ctx.author.id, ctx.guild.id, player_data)
     save_json(FANTASY_TEAMS_FILE, fantasy_teams)
     
-    # Decrease stock price by 3%
     new_price = int(current_price * 0.97)
     update_stock_price(member.id, ctx.guild.id, new_price)
     
@@ -766,7 +849,6 @@ async def viewsquad(ctx, member: discord.Member = None):
     
     embed.add_field(name="Squad Size", value=f"{len(squad['players'])}/{config['max_fantasy_size']}", inline=True)
     
-    # Calculate total squad value
     total_value = sum(get_stock_price(p['user_id'], ctx.guild.id) for p in squad['players'])
     embed.add_field(name="Total Squad Value", value=f"${total_value:,}", inline=True)
     
@@ -816,7 +898,6 @@ async def price(ctx, member: discord.Member):
     else:
         embed.add_field(name="Change", value=f"0% ➖", inline=True)
     
-    # Check how many people own this card
     fantasy_teams = load_json(FANTASY_TEAMS_FILE)
     owners = sum(1 for team in fantasy_teams.values() 
                  if team['guild_id'] == ctx.guild.id and 
@@ -884,13 +965,11 @@ async def invest(ctx, member: discord.Member, amount: int):
         await ctx.send(f"❌ Insufficient funds! You have ${player_data['balance']:,}")
         return
     
-    # Deduct amount
     player_data['balance'] -= amount
     update_player_data(ctx.author.id, ctx.guild.id, player_data)
     
-    # Increase card value proportionally
     current_price = get_stock_price(member.id, ctx.guild.id)
-    increase = int(amount * 0.1)  # 10% of investment added to card value
+    increase = int(amount * 0.1)
     new_price = current_price + increase
     update_stock_price(member.id, ctx.guild.id, new_price)
     
@@ -921,7 +1000,6 @@ async def market(ctx):
     guild_stocks = [(user_id.split('_')[1], data) for user_id, data in stocks.items() 
                     if user_id.startswith(f"{ctx.guild.id}_")]
     
-    # Sort by price
     guild_stocks.sort(key=lambda x: x[1]['price'], reverse=True)
     
     embed = discord.Embed(
@@ -943,6 +1021,337 @@ async def market(ctx):
     
     await ctx.send(embed=embed)
 
+# Transfer Command
+@bot.hybrid_command(name='transfer', description='Transfer player to another team')
+async def transfer(ctx, player: discord.Member, team_owner: discord.Member):
+    """Initiate a player transfer"""
+    
+    if player.bot or team_owner.bot:
+        await ctx.send("❌ Cannot transfer bots!")
+        return
+    
+    if ctx.author.id == team_owner.id:
+        await ctx.send("❌ Cannot transfer to yourself!")
+        return
+    
+    # Check if sender owns the player
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    sender_key = f"{ctx.guild.id}_{ctx.author.id}"
+    
+    if sender_key not in fantasy_teams:
+        await ctx.send("❌ You don't have a fantasy squad!")
+        return
+    
+    player_in_squad = None
+    for p in fantasy_teams[sender_key]['players']:
+        if p['user_id'] == player.id:
+            player_in_squad = p
+            break
+    
+    if not player_in_squad:
+        await ctx.send(f"❌ {player.display_name} is not in your squad!")
+        return
+    
+    # Check if recipient has a team
+    receiver_data = get_player_data(team_owner.id, ctx.guild.id)
+    if not receiver_data.get('team_id'):
+        await ctx.send(f"❌ {team_owner.display_name} doesn't have a team!")
+        return
+    
+    # Create transfer request
+    transfers = load_json(TRANSFERS_FILE)
+    transfer_id = f"transfer_{ctx.guild.id}_{ctx.author.id}_{team_owner.id}_{datetime.now().timestamp()}"
+    
+    current_price = get_stock_price(player.id, ctx.guild.id)
+    
+    transfers[transfer_id] = {
+        'id': transfer_id,
+        'from_user': ctx.author.id,
+        'to_user': team_owner.id,
+        'player_id': player.id,
+        'player_name': player.display_name,
+        'initial_price': current_price,
+        'status': 'pending',
+        'created_at': datetime.now().isoformat(),
+        'guild_id': ctx.guild.id,
+        'type': 'transfer',
+        'counter_offer_price': None,
+        'counter_offer_player': None
+    }
+    save_json(TRANSFERS_FILE, transfers)
+    
+    # Send DM to both parties
+    embed_sender = discord.Embed(
+        title="📤 Transfer Request Sent",
+        description=f"You've initiated a transfer of **{player.display_name}** to {team_owner.mention}",
+        color=discord.Color.blue()
+    )
+    embed_sender.add_field(name="Player", value=player.mention, inline=True)
+    embed_sender.add_field(name="Current Price", value=f"${current_price:,}", inline=True)
+    embed_sender.add_field(name="Transfer ID", value=f"`{transfer_id}`", inline=False)
+    
+    try:
+        await ctx.author.send(embed=embed_sender)
+    except:
+        pass
+    
+    embed_receiver = discord.Embed(
+        title="📥 Transfer Offer Received",
+        description=f"{ctx.author.mention} wants to transfer **{player.display_name}** to your team!",
+        color=discord.Color.green()
+    )
+    embed_receiver.add_field(name="Player", value=player.mention, inline=True)
+    embed_receiver.add_field(name="Asking Price", value=f"${current_price:,}", inline=True)
+    embed_receiver.add_field(
+        name="Options",
+        value=f"• Type `{current_price}` to accept at current price\n• Type a different number to counter-offer\n• Type a player mention to exchange\n• Type `price,@player` to offer both\n• Type `reject` to decline",
+        inline=False
+    )
+    embed_receiver.add_field(name="Transfer ID", value=f"`{transfer_id}`", inline=False)
+    
+    try:
+        await team_owner.send(embed=embed_receiver)
+        await ctx.send(f"✅ Transfer request sent to {team_owner.mention}! Check your DMs.")
+    except:
+        await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
+
+# Loan Command
+@bot.hybrid_command(name='loan', description='Loan player to another team')
+async def loan(ctx, player: discord.Member, team_owner: discord.Member):
+    """Initiate a player loan"""
+    
+    if player.bot or team_owner.bot:
+        await ctx.send("❌ Cannot loan bots!")
+        return
+    
+    if ctx.author.id == team_owner.id:
+        await ctx.send("❌ Cannot loan to yourself!")
+        return
+    
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    sender_key = f"{ctx.guild.id}_{ctx.author.id}"
+    
+    if sender_key not in fantasy_teams:
+        await ctx.send("❌ You don't have a fantasy squad!")
+        return
+    
+    player_in_squad = None
+    for p in fantasy_teams[sender_key]['players']:
+        if p['user_id'] == player.id:
+            player_in_squad = p
+            break
+    
+    if not player_in_squad:
+        await ctx.send(f"❌ {player.display_name} is not in your squad!")
+        return
+    
+    receiver_data = get_player_data(team_owner.id, ctx.guild.id)
+    if not receiver_data.get('team_id'):
+        await ctx.send(f"❌ {team_owner.display_name} doesn't have a team!")
+        return
+    
+    loans = load_json(LOANS_FILE)
+    loan_id = f"loan_{ctx.guild.id}_{ctx.author.id}_{team_owner.id}_{datetime.now().timestamp()}"
+    
+    current_price = get_stock_price(player.id, ctx.guild.id)
+    
+    loans[loan_id] = {
+        'id': loan_id,
+        'from_user': ctx.author.id,
+        'to_user': team_owner.id,
+        'player_id': player.id,
+        'player_name': player.display_name,
+        'price': current_price,
+        'status': 'pending',
+        'created_at': datetime.now().isoformat(),
+        'guild_id': ctx.guild.id,
+        'matches': None
+    }
+    save_json(LOANS_FILE, loans)
+    
+    embed_sender = discord.Embed(
+        title="📤 Loan Request Sent",
+        description=f"You've initiated a loan of **{player.display_name}** to {team_owner.mention}",
+        color=discord.Color.blue()
+    )
+    embed_sender.add_field(name="Player", value=player.mention, inline=True)
+    embed_sender.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
+    
+    try:
+        await ctx.author.send(embed=embed_sender)
+    except:
+        pass
+    
+    embed_receiver = discord.Embed(
+        title="📥 Loan Offer Received",
+        description=f"{ctx.author.mention} wants to loan **{player.display_name}** to your team!",
+        color=discord.Color.orange()
+    )
+    embed_receiver.add_field(name="Player", value=player.mention, inline=True)
+    embed_receiver.add_field(
+        name="Response Required",
+        value="Type the number of matches you want to loan them for (e.g., `5` for 5 matches)\nType `reject` to decline",
+        inline=False
+    )
+    embed_receiver.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
+    
+    try:
+        await team_owner.send(embed=embed_receiver)
+        await ctx.send(f"✅ Loan request sent to {team_owner.mention}! Check your DMs.")
+    except:
+        await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
+
+# Predict Match Add (Admin)
+@bot.hybrid_command(name='predictmatchadd', description='Add a match for predictions (Admin)')
+@commands.has_permissions(administrator=True)
+async def predictmatchadd(ctx, *, match_text: str):
+    """Add a match for predictions"""
+    
+    if ' vs ' not in match_text.lower():
+        await ctx.send("❌ Format: `+predictmatchadd Team1 vs Team2`")
+        return
+    
+    parts = match_text.split(' vs ')
+    if len(parts) != 2:
+        await ctx.send("❌ Format: `+predictmatchadd Team1 vs Team2`")
+        return
+    
+    team1 = parts[0].strip()
+    team2 = parts[1].strip()
+    
+    # Verify teams exist
+    teams = load_json(TEAMS_FILE)
+    guild_teams = {team['name'].lower(): team for key, team in teams.items() if team['guild_id'] == ctx.guild.id}
+    
+    if team1.lower() not in guild_teams:
+        await ctx.send(f"❌ Team '{team1}' not found! Use `+teamlist` to see all teams.")
+        return
+    
+    if team2.lower() not in guild_teams:
+        await ctx.send(f"❌ Team '{team2}' not found! Use `+teamlist` to see all teams.")
+        return
+    
+    matches = load_json(MATCHES_FILE)
+    match_id = f"match_{ctx.guild.id}_{len(matches)}_{datetime.now().timestamp()}"
+    
+    matches[match_id] = {
+        'id': match_id,
+        'team1': team1,
+        'team2': team2,
+        'guild_id': ctx.guild.id,
+        'created_at': datetime.now().isoformat(),
+        'status': 'active',
+        'result': None
+    }
+    save_json(MATCHES_FILE, matches)
+    
+    embed = discord.Embed(
+        title="⚽ Match Added!",
+        description=f"**{team1}** vs **{team2}**",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Match ID", value=f"`{match_id}`", inline=False)
+    embed.add_field(name="How to Predict", value=f"Use `+predict {match_id} <team_name>`", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Match Remove (Admin)
+@bot.hybrid_command(name='matchremove', description='Remove a match (Admin)')
+@commands.has_permissions(administrator=True)
+async def matchremove(ctx, match_id: str):
+    """Remove a match"""
+    matches = load_json(MATCHES_FILE)
+    
+    if match_id not in matches:
+        await ctx.send("❌ Match not found!")
+        return
+    
+    match_data = matches[match_id]
+    del matches[match_id]
+    save_json(MATCHES_FILE, matches)
+    
+    # Remove associated predictions
+    predictions = load_json(PREDICTIONS_FILE)
+    predictions = {k: v for k, v in predictions.items() if v.get('match_id') != match_id}
+    save_json(PREDICTIONS_FILE, predictions)
+    
+    await ctx.send(f"✅ Match **{match_data['team1']} vs {match_data['team2']}** has been removed!")
+
+# Predict Command
+@bot.hybrid_command(name='predict', description='Predict match winner')
+async def predict(ctx, match_id: str, *, team_name: str):
+    """Make a prediction for a match"""
+    matches = load_json(MATCHES_FILE)
+    
+    if match_id not in matches:
+        await ctx.send("❌ Match not found! Use `+predictions` to see active matches.")
+        return
+    
+    match_data = matches[match_id]
+    
+    if match_data['status'] != 'active':
+        await ctx.send("❌ This match is no longer accepting predictions!")
+        return
+    
+    # Verify team name
+    if team_name.lower() != match_data['team1'].lower() and team_name.lower() != match_data['team2'].lower():
+        await ctx.send(f"❌ Team must be either '{match_data['team1']}' or '{match_data['team2']}'")
+        return
+    
+    predictions = load_json(PREDICTIONS_FILE)
+    prediction_key = f"{ctx.guild.id}_{ctx.author.id}_{match_id}"
+    
+    if prediction_key in predictions:
+        await ctx.send(f"❌ You've already predicted this match! Your prediction: **{predictions[prediction_key]['predicted_team']}**")
+        return
+    
+    predictions[prediction_key] = {
+        'user_id': ctx.author.id,
+        'match_id': match_id,
+        'predicted_team': team_name,
+        'created_at': datetime.now().isoformat(),
+        'guild_id': ctx.guild.id
+    }
+    save_json(PREDICTIONS_FILE, predictions)
+    
+    embed = discord.Embed(
+        title="✅ Prediction Recorded!",
+        description=f"You predicted **{team_name}** to win!",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Match", value=f"{match_data['team1']} vs {match_data['team2']}", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Predictions List
+@bot.hybrid_command(name='predictions', description='View all active matches')
+async def predictions(ctx):
+    """View all active matches for predictions"""
+    matches = load_json(MATCHES_FILE)
+    active_matches = {k: v for k, v in matches.items() if v['guild_id'] == ctx.guild.id and v['status'] == 'active'}
+    
+    if not active_matches:
+        await ctx.send("❌ No active matches for predictions!")
+        return
+    
+    embed = discord.Embed(
+        title="⚽ Active Matches",
+        description="Use `+predict <match_id> <team_name>` to make your prediction!",
+        color=discord.Color.blue()
+    )
+    
+    for match_id, match_data in list(active_matches.items())[:25]:
+        predictions_data = load_json(PREDICTIONS_FILE)
+        match_predictions = sum(1 for p in predictions_data.values() if p['match_id'] == match_id)
+        
+        embed.add_field(
+            name=f"{match_data['team1']} vs {match_data['team2']}",
+            value=f"Match ID: `{match_id}`\nPredictions: {match_predictions}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
 # Leaderboard
 @bot.hybrid_command(name='leaderboard', aliases=['lb'], description='View richest players')
 async def leaderboard(ctx):
@@ -950,7 +1359,6 @@ async def leaderboard(ctx):
     players = load_json(PLAYERS_FILE)
     guild_players = [(key, data) for key, data in players.items() if data['guild_id'] == ctx.guild.id]
     
-    # Sort by balance
     guild_players.sort(key=lambda x: x[1]['balance'], reverse=True)
     
     embed = discord.Embed(
@@ -979,11 +1387,13 @@ async def stats(ctx):
     fantasy_teams = load_json(FANTASY_TEAMS_FILE)
     players = load_json(PLAYERS_FILE)
     transactions = load_json(TRANSACTIONS_FILE)
+    matches = load_json(MATCHES_FILE)
     
     guild_teams = sum(1 for t in teams.values() if t['guild_id'] == ctx.guild.id)
     guild_fantasy = sum(1 for f in fantasy_teams.values() if f['guild_id'] == ctx.guild.id)
     guild_players = sum(1 for p in players.values() if p['guild_id'] == ctx.guild.id)
     guild_transactions = sum(1 for t in transactions if t['guild_id'] == ctx.guild.id)
+    guild_matches = sum(1 for m in matches.values() if m['guild_id'] == ctx.guild.id)
     
     embed = discord.Embed(
         title="📊 Hand Football Statistics",
@@ -994,6 +1404,7 @@ async def stats(ctx):
     embed.add_field(name="Fantasy Squads", value=guild_fantasy, inline=True)
     embed.add_field(name="Registered Players", value=guild_players, inline=True)
     embed.add_field(name="Total Transactions", value=guild_transactions, inline=True)
+    embed.add_field(name="Active Matches", value=guild_matches, inline=True)
     embed.add_field(name="Server Members", value=ctx.guild.member_count, inline=True)
     
     await ctx.send(embed=embed)
@@ -1165,7 +1576,7 @@ async def tier(ctx):
         color=discord.Color.gold()
     )
     
-    for i, guild in enumerate(bot.guilds[:25], 1):  # Discord embed limit
+    for i, guild in enumerate(bot.guilds[:25], 1):
         embed.add_field(
             name=f"{i}. {guild.name}",
             value=f"Members: {guild.member_count}",
@@ -1187,7 +1598,6 @@ async def daily(ctx):
     """Claim daily reward"""
     player_data = get_player_data(ctx.author.id, ctx.guild.id)
     
-    # Check last claim
     last_claim = player_data.get('last_daily_claim')
     if last_claim:
         last_claim_date = datetime.fromisoformat(last_claim).date()
@@ -1195,8 +1605,7 @@ async def daily(ctx):
             await ctx.send("❌ You already claimed your daily reward today! Come back tomorrow.")
             return
     
-    # Give reward
-    reward = 1000000  # 1 million
+    reward = 1000
     player_data['balance'] += reward
     player_data['last_daily_claim'] = datetime.now().isoformat()
     update_player_data(ctx.author.id, ctx.guild.id, player_data)
@@ -1213,21 +1622,13 @@ async def daily(ctx):
 # Run the bot
 if __name__ == "__main__":
     print("Starting Hand Football Support Bot...")
-    
-    # Load environment variables
-    from dotenv import load_dotenv
-    load_dotenv()
+    print("Make sure to set your bot token!")
     
     TOKEN = os.getenv('DISCORD_BOT_TOKEN')
     
-    if not TOKEN:
-        print("❌ ERROR: DISCORD_BOT_TOKEN not found!")
-        print("Please set DISCORD_BOT_TOKEN in your environment variables or .env file")
-        exit(1)
-    
-    try:
+    if TOKEN == 'YOUR_BOT_TOKEN_HERE':
+        print("⚠️ WARNING: Please set your Discord bot token!")
+        print("Either set DISCORD_BOT_TOKEN environment variable or replace YOUR_BOT_TOKEN_HERE in the code")
+    else:
         bot.run(TOKEN)
-    except discord.LoginFailure:
-        print("❌ ERROR: Invalid token! Please check your DISCORD_BOT_TOKEN")
-    except Exception as e:
-        print(f"❌ ERROR: {e}")
+```
