@@ -1213,13 +1213,21 @@ async def daily(ctx):
 # Run the bot
 if __name__ == "__main__":
     print("Starting Hand Football Support Bot...")
-    print("Make sure to set your bot token!")
     
-    # Get token from environment variable or replace with your token
-    TOKEN = os.getenv('DISCORD_BOT_TOKEN') or 'YOUR_BOT_TOKEN_HERE'
+    # Load environment variables
+    from dotenv import load_dotenv
+    load_dotenv()
     
-    if TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        print("⚠️ WARNING: Please set your Discord bot token!")
-        print("Either set DISCORD_BOT_TOKEN environment variable or replace YOUR_BOT_TOKEN_HERE in the code")
-    else:
+    TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+    
+    if not TOKEN:
+        print("❌ ERROR: DISCORD_BOT_TOKEN not found!")
+        print("Please set DISCORD_BOT_TOKEN in your environment variables or .env file")
+        exit(1)
+    
+    try:
         bot.run(TOKEN)
+    except discord.LoginFailure:
+        print("❌ ERROR: Invalid token! Please check your DISCORD_BOT_TOKEN")
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
