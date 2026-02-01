@@ -1135,9 +1135,7 @@ async def on_message(message):
         return
     
     # Process commands first
-    await bot.process_commands(message)
-    commands
-    await bot.process_commands(message)
+        await bot.process_commands(message)
     
     # Check for raw stats message reply (UPDATED CODE)
     if message.reference and not isinstance(message.channel, discord.DMChannel):
