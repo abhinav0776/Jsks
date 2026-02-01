@@ -1136,7 +1136,7 @@ async def on_message(message):
     
     # Process commands first
     await bot.process_commands(message)
-    commands first
+    commands
     await bot.process_commands(message)
     
     # Check for raw stats message reply (UPDATED CODE)
