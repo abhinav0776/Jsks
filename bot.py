@@ -1,4 +1,4 @@
-```python
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -1631,4 +1631,3 @@ if __name__ == "__main__":
         print("Either set DISCORD_BOT_TOKEN environment variable or replace YOUR_BOT_TOKEN_HERE in the code")
     else:
         bot.run(TOKEN)
-```
