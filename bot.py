@@ -1200,7 +1200,252 @@ async def loan(ctx, player: discord.Member, team_owner: discord.Member):
         await ctx.send(f"✅ Loan request sent to {team_owner.mention}! Check your DMs.")
     except:
         await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
-
+@bot.event
+async def on_message(message):
+    # Ignore bot messages
+    if message.author.bot:
+        return
+    
+    # Process commands first
+    await bot.process_commands(message)
+    
+    # Check if message is in DMs
+    if isinstance(message.channel, discord.DMChannel):
+        # Check for transfer responses
+        transfers = load_json(TRANSFERS_FILE)
+        loans = load_json(LOANS_FILE)
+        
+        # Check if user has pending transfer offers
+        for transfer_id, transfer_data in transfers.items():
+            if transfer_data['to_user'] == message.author.id and transfer_data['status'] == 'pending':
+                response = message.content.lower().strip()
+                
+                if response == 'reject':
+                    transfer_data['status'] = 'rejected'
+                    save_json(TRANSFERS_FILE, transfers)
+                    
+                    from_user = bot.get_user(transfer_data['from_user'])
+                    await message.author.send("❌ Transfer rejected!")
+                    if from_user:
+                        await from_user.send(f"❌ Your transfer of {transfer_data['player_name']} was rejected.")
+                    return
+                
+                # Check if it's a price
+                elif response.isdigit():
+                    new_price = int(response)
+                    
+                    # Accept at current price
+                    if new_price == transfer_data['initial_price']:
+                        # Process transfer
+                        fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+                        from_key = f"{transfer_data['guild_id']}_{transfer_data['from_user']}"
+                        to_key = f"{transfer_data['guild_id']}_{transfer_data['to_user']}"
+                        
+                        # Remove from sender's team
+                        for i, p in enumerate(fantasy_teams[from_key]['players']):
+                            if p['user_id'] == transfer_data['player_id']:
+                                player_data = fantasy_teams[from_key]['players'].pop(i)
+                                break
+                        
+                        # Check if receiver has fantasy team
+                        if to_key not in fantasy_teams:
+                            await message.author.send("❌ You need to create a fantasy squad first! Use `+createfantasy`")
+                            return
+                        
+                        # Add to receiver's team
+                        fantasy_teams[to_key]['players'].append(player_data)
+                        save_json(FANTASY_TEAMS, fantasy_teams)
+                        
+                        # Handle payment
+                        receiver_player_data = get_player_data(transfer_data['to_user'], transfer_data['guild_id'])
+                        if receiver_player_data['balance'] < new_price:
+                            await message.author.send(f"❌ Insufficient funds! You need ${new_price:,}")
+                            return
+                        
+                        receiver_player_data['balance'] -= new_price
+                        update_player_data(transfer_data['to_user'], transfer_data['guild_id'], receiver_player_data)
+                        
+                        sender_player_data = get_player_data(transfer_data['from_user'], transfer_data['guild_id'])
+                        sender_player_data['balance'] += new_price
+                        update_player_data(transfer_data['from_user'], transfer_data['guild_id'], sender_player_data)
+                        
+                        transfer_data['status'] = 'completed'
+                        save_json(TRANSFERS_FILE, transfers)
+                        
+                        await message.author.send(f"✅ Transfer completed! You paid ${new_price:,}")
+                        
+                        from_user = bot.get_user(transfer_data['from_user'])
+                        if from_user:
+                            await from_user.send(f"✅ Transfer completed! You received ${new_price:,}")
+                        return
+                    
+                    # Counter offer
+                    else:
+                        transfer_data['counter_offer_price'] = new_price
+                        save_json(TRANSFERS_FILE, transfers)
+                        
+                        await message.author.send(f"✅ Counter-offer sent: ${new_price:,}")
+                        
+                        from_user = bot.get_user(transfer_data['from_user'])
+                        if from_user:
+                            await from_user.send(f"📥 Counter-offer received: ${new_price:,}\nType `accept` to accept or `reject` to decline.")
+                        return
+                
+                # Check for player exchange
+                elif message.mentions:
+                    exchange_player = message.mentions[0]
+                    
+                    # Check if offering player exists in their team
+                    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+                    to_key = f"{transfer_data['guild_id']}_{transfer_data['to_user']}"
+                    
+                    has_player = any(p['user_id'] == exchange_player.id for p in fantasy_teams[to_key]['players'])
+                    
+                    if not has_player:
+                        await message.author.send(f"❌ You don't have {exchange_player.display_name} in your squad!")
+                        return
+                    
+                    transfer_data['counter_offer_player'] = exchange_player.id
+                    save_json(TRANSFERS_FILE, transfers)
+                    
+                    await message.author.send(f"✅ Exchange offer sent: {exchange_player.display_name}")
+                    
+                    from_user = bot.get_user(transfer_data['from_user'])
+                    if from_user:
+                        await from_user.send(f"📥 Exchange offer: {exchange_player.mention}\nType `accept` to accept or `reject` to decline.")
+                    return
+                
+                # Check for combined offer (price,@player)
+                elif ',' in response and message.mentions:
+                    parts = response.split(',')
+                    if parts[0].isdigit():
+                        new_price = int(parts[0])
+                        exchange_player = message.mentions[0]
+                        
+                        fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+                        to_key = f"{transfer_data['guild_id']}_{transfer_data['to_user']}"
+                        
+                        has_player = any(p['user_id'] == exchange_player.id for p in fantasy_teams[to_key]['players'])
+                        
+                        if not has_player:
+                            await message.author.send(f"❌ You don't have {exchange_player.display_name} in your squad!")
+                            return
+                        
+                        transfer_data['counter_offer_price'] = new_price
+                        transfer_data['counter_offer_player'] = exchange_player.id
+                        save_json(TRANSFERS_FILE, transfers)
+                        
+                        await message.author.send(f"✅ Combined offer sent: ${new_price:,} + {exchange_player.display_name}")
+                        
+                        from_user = bot.get_user(transfer_data['from_user'])
+                        if from_user:
+                            await from_user.send(f"📥 Combined offer: ${new_price:,} + {exchange_player.mention}\nType `accept` to accept or `reject` to decline.")
+                        return
+        
+        # Check for counter-offer responses from original sender
+        for transfer_id, transfer_data in transfers.items():
+            if transfer_data['from_user'] == message.author.id and transfer_data['status'] == 'pending':
+                if transfer_data.get('counter_offer_price') or transfer_data.get('counter_offer_player'):
+                    response = message.content.lower().strip()
+                    
+                    if response == 'accept':
+                        # Process the counter-offer
+                        fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+                        from_key = f"{transfer_data['guild_id']}_{transfer_data['from_user']}"
+                        to_key = f"{transfer_data['guild_id']}_{transfer_data['to_user']}"
+                        
+                        # Handle player exchange
+                        if transfer_data.get('counter_offer_player'):
+                            # Swap players
+                            player1 = None
+                            for i, p in enumerate(fantasy_teams[from_key]['players']):
+                                if p['user_id'] == transfer_data['player_id']:
+                                    player1 = fantasy_teams[from_key]['players'].pop(i)
+                                    break
+                            
+                            player2 = None
+                            for i, p in enumerate(fantasy_teams[to_key]['players']):
+                                if p['user_id'] == transfer_data['counter_offer_player']:
+                                    player2 = fantasy_teams[to_key]['players'].pop(i)
+                                    break
+                            
+                            if player1 and player2:
+                                fantasy_teams[to_key]['players'].append(player1)
+                                fantasy_teams[from_key]['players'].append(player2)
+                        else:
+                            # Just move player
+                            for i, p in enumerate(fantasy_teams[from_key]['players']):
+                                if p['user_id'] == transfer_data['player_id']:
+                                    player_data = fantasy_teams[from_key]['players'].pop(i)
+                                    fantasy_teams[to_key]['players'].append(player_data)
+                                    break
+                        
+                        # Handle payment if counter-offer price exists
+                        if transfer_data.get('counter_offer_price'):
+                            price = transfer_data['counter_offer_price']
+                            
+                            receiver_player_data = get_player_data(transfer_data['to_user'], transfer_data['guild_id'])
+                            receiver_player_data['balance'] -= price
+                            update_player_data(transfer_data['to_user'], transfer_data['guild_id'], receiver_player_data)
+                            
+                            sender_player_data = get_player_data(transfer_data['from_user'], transfer_data['guild_id'])
+                            sender_player_data['balance'] += price
+                            update_player_data(transfer_data['from_user'], transfer_data['guild_id'], sender_player_data)
+                        
+                        save_json(FANTASY_TEAMS_FILE, fantasy_teams)
+                        transfer_data['status'] = 'completed'
+                        save_json(TRANSFERS_FILE, transfers)
+                        
+                        await message.author.send("✅ Counter-offer accepted! Transfer completed.")
+                        
+                        to_user = bot.get_user(transfer_data['to_user'])
+                        if to_user:
+                            await to_user.send("✅ Your counter-offer was accepted! Transfer completed.")
+                        return
+                    
+                    elif response == 'reject':
+                        transfer_data['status'] = 'rejected'
+                        save_json(TRANSFERS_FILE, transfers)
+                        
+                        await message.author.send("❌ Counter-offer rejected!")
+                        
+                        to_user = bot.get_user(transfer_data['to_user'])
+                        if to_user:
+                            await to_user.send("❌ Your counter-offer was rejected.")
+                        return
+        
+        # Check for loan responses
+        for loan_id, loan_data in loans.items():
+            if loan_data['to_user'] == message.author.id and loan_data['status'] == 'pending':
+                response = message.content.lower().strip()
+                
+                if response == 'reject':
+                    loan_data['status'] = 'rejected'
+                    save_json(LOANS_FILE, loans)
+                    
+                    from_user = bot.get_user(loan_data['from_user'])
+                    await message.author.send("❌ Loan rejected!")
+                    if from_user:
+                        await from_user.send(f"❌ Your loan offer for {loan_data['player_name']} was rejected.")
+                    return
+                
+                elif response.isdigit():
+                    matches = int(response)
+                    
+                    if matches <= 0:
+                        await message.author.send("❌ Number of matches must be positive!")
+                        return
+                    
+                    loan_data['matches'] = matches
+                    loan_data['status'] = 'active'
+                    save_json(LOANS_FILE, loans)
+                    
+                    await message.author.send(f"✅ Loan accepted for {matches} matches!")
+                    
+                    from_user = bot.get_user(loan_data['from_user'])
+                    if from_user:
+                        await from_user.send(f"✅ Loan accepted! {loan_data['player_name']} loaned for {matches} matches.")
+                    return
 # Predict Match Add (Admin)
 @bot.hybrid_command(name='predictmatchadd', description='Add a match for predictions (Admin)')
 @commands.has_permissions(administrator=True)
