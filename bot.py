@@ -1114,92 +1114,7 @@ async def transfer(ctx, player: discord.Member, team_owner: discord.Member):
         await ctx.send(f"✅ Transfer request sent to {team_owner.mention}! Check your DMs.")
     except:
         await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
-
-# Loan Command
-@bot.hybrid_command(name='loan', description='Loan player to another team')
-async def loan(ctx, player: discord.Member, team_owner: discord.Member):
-    """Initiate a player loan"""
-    
-    if player.bot or team_owner.bot:
-        await ctx.send("❌ Cannot loan bots!")
-        return
-    
-    if ctx.author.id == team_owner.id:
-        await ctx.send("❌ Cannot loan to yourself!")
-        return
-    
-    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
-    sender_key = f"{ctx.guild.id}_{ctx.author.id}"
-    
-    if sender_key not in fantasy_teams:
-        await ctx.send("❌ You don't have a fantasy squad!")
-        return
-    
-    player_in_squad = None
-    for p in fantasy_teams[sender_key]['players']:
-        if p['user_id'] == player.id:
-            player_in_squad = p
-            break
-    
-    if not player_in_squad:
-        await ctx.send(f"❌ {player.display_name} is not in your squad!")
-        return
-    
-    receiver_data = get_player_data(team_owner.id, ctx.guild.id)
-    if not receiver_data.get('team_id'):
-        await ctx.send(f"❌ {team_owner.display_name} doesn't have a team!")
-        return
-    
-    loans = load_json(LOANS_FILE)
-    loan_id = f"loan_{ctx.guild.id}_{ctx.author.id}_{team_owner.id}_{datetime.now().timestamp()}"
-    
-    current_price = get_stock_price(player.id, ctx.guild.id)
-    
-    loans[loan_id] = {
-        'id': loan_id,
-        'from_user': ctx.author.id,
-        'to_user': team_owner.id,
-        'player_id': player.id,
-        'player_name': player.display_name,
-        'price': current_price,
-        'status': 'pending',
-        'created_at': datetime.now().isoformat(),
-        'guild_id': ctx.guild.id,
-        'matches': None
-    }
-    save_json(LOANS_FILE, loans)
-    
-    embed_sender = discord.Embed(
-        title="📤 Loan Request Sent",
-        description=f"You've initiated a loan of **{player.display_name}** to {team_owner.mention}",
-        color=discord.Color.blue()
-    )
-    embed_sender.add_field(name="Player", value=player.mention, inline=True)
-    embed_sender.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
-    
-    try:
-        await ctx.author.send(embed=embed_sender)
-    except:
-        pass
-    
-    embed_receiver = discord.Embed(
-        title="📥 Loan Offer Received",
-        description=f"{ctx.author.mention} wants to loan **{player.display_name}** to your team!",
-        color=discord.Color.orange()
-    )
-    embed_receiver.add_field(name="Player", value=player.mention, inline=True)
-    embed_receiver.add_field(
-        name="Response Required",
-        value="Type the number of matches you want to loan them for (e.g., `5` for 5 matches)\nType `reject` to decline",
-        inline=False
-    )
-    embed_receiver.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
-    
-    try:
-        await team_owner.send(embed=embed_receiver)
-        await ctx.send(f"✅ Loan request sent to {team_owner.mention}! Check your DMs.")
-    except:
-        await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
+        
 @bot.event
 async def on_message(message):
     # Ignore bot messages
@@ -1413,7 +1328,120 @@ async def on_message(message):
                         if to_user:
                             await to_user.send("❌ Your counter-offer was rejected.")
                         return
+# Loan Command
+@bot.hybrid_command(name='loan', description='Loan player to another team')
+async def loan(ctx, player: discord.Member, team_owner: discord.Member):
+    """Initiate a player loan"""
+    
+    if player.bot or team_owner.bot:
+        await ctx.send("❌ Cannot loan bots!")
+        return
+    
+    if ctx.author.id == team_owner.id:
+        await ctx.send("❌ Cannot loan to yourself!")
+        return
+    
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    sender_key = f"{ctx.guild.id}_{ctx.author.id}"
+    
+    if sender_key not in fantasy_teams:
+        await ctx.send("❌ You don't have a fantasy squad!")
+        return
+    
+    player_in_squad = None
+    for p in fantasy_teams[sender_key]['players']:
+        if p['user_id'] == player.id:
+            player_in_squad = p
+            break
+    
+    if not player_in_squad:
+        await ctx.send(f"❌ {player.display_name} is not in your squad!")
+        return
+    
+    receiver_data = get_player_data(team_owner.id, ctx.guild.id)
+    if not receiver_data.get('team_id'):
+        await ctx.send(f"❌ {team_owner.display_name} doesn't have a team!")
+        return
+    
+    loans = load_json(LOANS_FILE)
+    loan_id = f"loan_{ctx.guild.id}_{ctx.author.id}_{team_owner.id}_{datetime.now().timestamp()}"
+    
+    current_price = get_stock_price(player.id, ctx.guild.id)
+    
+    loans[loan_id] = {
+        'id': loan_id,
+        'from_user': ctx.author.id,
+        'to_user': team_owner.id,
+        'player_id': player.id,
+        'player_name': player.display_name,
+        'price': current_price,
+        'status': 'pending',
+        'created_at': datetime.now().isoformat(),
+        'guild_id': ctx.guild.id,
+        'matches': None
+    }
+    save_json(LOANS_FILE, loans)
+    
+    embed_sender = discord.Embed(
+        title="📤 Loan Request Sent",
+        description=f"You've initiated a loan of **{player.display_name}** to {team_owner.mention}",
+        color=discord.Color.blue()
+    )
+    embed_sender.add_field(name="Player", value=player.mention, inline=True)
+    embed_sender.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
+    
+    try:
+        await ctx.author.send(embed=embed_sender)
+    except:
+        pass
+    
+    embed_receiver = discord.Embed(
+        title="📥 Loan Offer Received",
+        description=f"{ctx.author.mention} wants to loan **{player.display_name}** to your team!",
+        color=discord.Color.orange()
+    )
+    embed_receiver.add_field(name="Player", value=player.mention, inline=True)
+    embed_receiver.add_field(
+        name="Response Required",
+        value="Type the number of matches you want to loan them for (e.g., `5` for 5 matches)\nType `reject` to decline",
+        inline=False
+    )
+    embed_receiver.add_field(name="Loan ID", value=f"`{loan_id}`", inline=False)
+    
+    try:
+        await team_owner.send(embed=embed_receiver)
+        await ctx.send(f"✅ Loan request sent to {team_owner.mention}! Check your DMs.")
+    except:
+        await ctx.send(f"❌ Could not send DM to {team_owner.mention}. Make sure they have DMs enabled!")
+@bot.event
+async def on_message(message):
+    # Ignore bot messages
+    if message.author.bot:
+        return
+    
+    # Process commands first
+    await bot.process_commands(message)
+    
+    # Check if message is in DMs
+    if isinstance(message.channel, discord.DMChannel):
+        # Check for transfer responses
+        transfers = load_json(TRANSFERS_FILE)
+        loans = load_json(LOANS_FILE)
         
+        # Check if user has pending transfer offers
+        for transfer_id, transfer_data in transfers.items():
+            if transfer_data['to_user'] == message.author.id and transfer_data['status'] == 'pending':
+                response = message.content.lower().strip()
+                
+                if response == 'reject':
+                    transfer_data['status'] = 'rejected'
+                    save_json(TRANSFERS_FILE, transfers)
+                    
+                    from_user = bot.get_user(transfer_data['from_user'])
+                    await message.author.send("❌ Transfer rejected!")
+                    if from_user:
+                        await from_user.send(f"❌ Your transfer of {transfer_data['player_name']} was rejected.")
+                    return     
         # Check for loan responses
         for loan_id, loan_data in loans.items():
             if loan_data['to_user'] == message.author.id and loan_data['status'] == 'pending':
