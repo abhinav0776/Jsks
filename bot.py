@@ -311,6 +311,19 @@ async def tutorial(ctx):
     view = TutorialView()
     await ctx.send(embed=view.get_embed(), view=view)
 
+@bot.hybrid_command(name='notsuregndu', description='Send a random gndu message')
+async def troll(ctx):
+    """Send a funny gndu message"""
+    messages = [
+        "Abey gaandu tu yhan! 😂",
+        "Moti gnd! 🤪",
+        "No u gaand! 🔄",
+        "Imagine seeing a gaand",
+        "Ez gaand gg 😎",
+        "Your gnd has been cooked! 🎭",
+        "Gaand 😈"
+    ]
+    await ctx.send(random.choice(messages))
 # Player Registration
 @bot.hybrid_command(name='register', description='Register to play Hand Football Fantasy')
 async def register(ctx):
