@@ -1,1 +1,1 @@
-worker: python football_bot.py
+worker: python bot.py
