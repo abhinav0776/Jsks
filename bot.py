@@ -1136,7 +1136,164 @@ async def on_message(message):
     
     # Process commands first
     await bot.process_commands(message)
+    commands first
+    await bot.process_commands(message)
     
+    # Check for raw stats message reply (UPDATED CODE)
+    if message.reference and not isinstance(message.channel, discord.DMChannel):
+        # Check if user is admin
+        if message.author.guild_permissions.administrator:
+            try:
+                referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+                
+                # Check if referenced message contains "Raw Statistics of the Match"
+                if "Raw Statistics of the Match" in referenced_msg.content or "raw statistics" in referenced_msg.content.lower():
+                    
+                    # Extract the code block
+                    content = referenced_msg.content
+                    
+                    # Find the python code block
+                    if "```python" in content or "```" in content:
+                        # Extract content between ``` markers
+                        start = content.find("```python")
+                        if start == -1:
+                            start = content.find("```")
+                        
+                        if start != -1:
+                            start = content.find("\n", start) + 1
+                            end = content.find("```", start)
+                            
+                            if end != -1:
+                                stats_block = content[start:end].strip()
+                                
+                                # Process each line
+                                lines = stats_block.split("\n")
+                                added_count = 0
+                                failed_count = 0
+                                
+                                results = []
+                                
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    
+                                    # Parse: userid, goals, assists, interceptions, tackles, saves
+                                    parts = [p.strip() for p in line.split(",")]
+                                    
+                                    if len(parts) >= 6:
+                                        try:
+                                            user_id = int(parts[0])
+                                            goals = int(parts[1])
+                                            assists = int(parts[2])
+                                            interceptions = int(parts[3])
+                                            tackles = int(parts[4])
+                                            saves = int(parts[5])
+                                            
+                                            # Get the member
+                                            member = message.guild.get_member(user_id)
+                                            
+                                            if member and not member.bot:
+                                                # Add stats
+                                                player_data = get_player_data(user_id, message.guild.id)
+                                                
+                                                if 'stats' not in player_data:
+                                                    player_data['stats'] = {
+                                                        'goals': 0,
+                                                        'assists': 0,
+                                                        'interceptions': 0,
+                                                        'tackles': 0,
+                                                        'saves': 0
+                                                    }
+                                                
+                                                player_data['stats']['goals'] += goals
+                                                player_data['stats']['assists'] += assists
+                                                player_data['stats']['interceptions'] += interceptions
+                                                player_data['stats']['tackles'] += tackles
+                                                player_data['stats']['saves'] += saves
+                                                
+                                                update_player_data(user_id, message.guild.id, player_data)
+                                                
+                                                results.append(f"✅ {member.mention}: G{goals} A{assists} I{interceptions} T{tackles} S{saves}")
+                                                added_count += 1
+                                            else:
+                                                results.append(f"❌ User ID {user_id}: Not found or is a bot")
+                                                failed_count += 1
+                                        
+                                        except ValueError:
+                                            failed_count += 1
+                                            continue
+                                
+                                # Send results
+                                embed = discord.Embed(
+                                    title="📊 Match Stats Added!",
+                                    description=f"**Successfully added:** {added_count}\n**Failed:** {failed_count}",
+                                    color=discord.Color.green()
+                                )
+                                
+                                # Split results into chunks if too many
+                                result_text = "\n".join(results[:25])  # Discord embed field limit
+                                if result_text:
+                                    embed.add_field(name="Results", value=result_text, inline=False)
+                                
+                                if len(results) > 25:
+                                    embed.set_footer(text=f"Showing 25/{len(results)} results")
+                                
+                                await message.reply(embed=embed)
+                                return
+                
+                # Original format support: reply with 5 numbers
+                content = message.content.strip()
+                parts = content.split()
+                
+                if len(parts) == 5 and all(p.isdigit() for p in parts):
+                    goals = int(parts[0])
+                    assists = int(parts[1])
+                    interceptions = int(parts[2])
+                    tackles = int(parts[3])
+                    saves = int(parts[4])
+                    
+                    target_user = referenced_msg.author
+                    
+                    if target_user.bot:
+                        await message.reply("❌ Cannot add stats to bots!")
+                        return
+                    
+                    player_data = get_player_data(target_user.id, message.guild.id)
+                    
+                    if 'stats' not in player_data:
+                        player_data['stats'] = {
+                            'goals': 0,
+                            'assists': 0,
+                            'interceptions': 0,
+                            'tackles': 0,
+                            'saves': 0
+                        }
+                    
+                    player_data['stats']['goals'] += goals
+                    player_data['stats']['assists'] += assists
+                    player_data['stats']['interceptions'] += interceptions
+                    player_data['stats']['tackles'] += tackles
+                    player_data['stats']['saves'] += saves
+                    
+                    update_player_data(target_user.id, message.guild.id, player_data)
+                    
+                    embed = discord.Embed(
+                        title="✅ Stats Added!",
+                        description=f"Stats updated for {target_user.mention}",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="⚽ Goals", value=f"+{goals}", inline=True)
+                    embed.add_field(name="🎯 Assists", value=f"+{assists}", inline=True)
+                    embed.add_field(name="🛡️ Interceptions", value=f"+{interceptions}", inline=True)
+                    embed.add_field(name="💪 Tackles", value=f"+{tackles}", inline=True)
+                    embed.add_field(name="🧤 Saves", value=f"+{saves}", inline=True)
+                    
+                    await message.reply(embed=embed)
+                    return
+                    
+            except Exception as e:
+                pass
     # Check if message is in DMs
     if isinstance(message.channel, discord.DMChannel):
         # Check for transfer responses
@@ -1341,6 +1498,182 @@ async def on_message(message):
                         if to_user:
                             await to_user.send("❌ Your counter-offer was rejected.")
                         return
+# Add Stats Command
+@bot.hybrid_command(name='addstats', description='Add stats to a player (Admin only)')
+@commands.has_permissions(administrator=True)
+async def addstats(ctx, member: discord.Member, goals: int = 0, assists: int = 0, interceptions: int = 0, tackles: int = 0, saves: int = 0):
+    """Add stats to a player"""
+    player_data = get_player_data(member.id, ctx.guild.id)
+    
+    if 'stats' not in player_data:
+        player_data['stats'] = {
+            'goals': 0,
+            'assists': 0,
+            'interceptions': 0,
+            'tackles': 0,
+            'saves': 0
+        }
+    
+    player_data['stats']['goals'] += goals
+    player_data['stats']['assists'] += assists
+    player_data['stats']['interceptions'] += interceptions
+    player_data['stats']['tackles'] += tackles
+    player_data['stats']['saves'] += saves
+    
+    update_player_data(member.id, ctx.guild.id, player_data)
+    
+    embed = discord.Embed(
+        title="✅ Stats Added!",
+        description=f"Stats updated for {member.mention}",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Goals", value=f"+{goals}", inline=True)
+    embed.add_field(name="Assists", value=f"+{assists}", inline=True)
+    embed.add_field(name="Interceptions", value=f"+{interceptions}", inline=True)
+    embed.add_field(name="Tackles", value=f"+{tackles}", inline=True)
+    embed.add_field(name="Saves", value=f"+{saves}", inline=True)
+    
+    await ctx.send(embed=embed)
+
+# Profile Command
+@bot.hybrid_command(name='profile', description='View player profile')
+async def profile(ctx, member: discord.Member = None):
+    """View player profile with stats"""
+    target = member or ctx.author
+    
+    if target.bot:
+        await ctx.send("❌ Bots don't have profiles!")
+        return
+    
+    player_data = get_player_data(target.id, ctx.guild.id)
+    current_price = get_stock_price(target.id, ctx.guild.id)
+    
+    embed = discord.Embed(
+        title=f"👤 {target.display_name}'s Profile",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    embed.add_field(name="💰 Balance", value=f"${player_data['balance']:,}", inline=True)
+    embed.add_field(name="💳 Card Value", value=f"${current_price:,}", inline=True)
+    
+    if player_data.get('team_id'):
+        teams = load_json(TEAMS_FILE)
+        team_key = f"{ctx.guild.id}_{player_data['team_id']}"
+        if team_key in teams:
+            embed.add_field(name="⚽ Team", value=teams[team_key]['name'], inline=True)
+    
+    if 'stats' in player_data:
+        stats = player_data['stats']
+        embed.add_field(name="⚽ Goals", value=stats.get('goals', 0), inline=True)
+        embed.add_field(name="🎯 Assists", value=stats.get('assists', 0), inline=True)
+        embed.add_field(name="🛡️ Interceptions", value=stats.get('interceptions', 0), inline=True)
+        embed.add_field(name="💪 Tackles", value=stats.get('tackles', 0), inline=True)
+        embed.add_field(name="🧤 Saves", value=stats.get('saves', 0), inline=True)
+    
+    await ctx.send(embed=embed)
+
+# Stats Leaderboards
+@bot.hybrid_command(name='lbgoals', description='Top 10 goal scorers')
+async def lbgoals(ctx):
+    """Leaderboard for goals"""
+    players = load_json(PLAYERS_FILE)
+    guild_players = [(key, data) for key, data in players.items() if data['guild_id'] == ctx.guild.id and 'stats' in data]
+    
+    guild_players.sort(key=lambda x: x[1]['stats'].get('goals', 0), reverse=True)
+    
+    embed = discord.Embed(
+        title="⚽ Top 10 Goal Scorers",
+        color=discord.Color.gold()
+    )
+    
+    for i, (key, data) in enumerate(guild_players[:10], 1):
+        member = ctx.guild.get_member(data['user_id'])
+        if member:
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            embed.add_field(
+                name=f"{medal} {member.display_name}",
+                value=f"{data['stats'].get('goals', 0)} goals",
+                inline=False
+            )
+    
+    await ctx.send(embed=embed)
+
+@bot.hybrid_command(name='lbassists', description='Top 10 assist providers')
+async def lbassists(ctx):
+    """Leaderboard for assists"""
+    players = load_json(PLAYERS_FILE)
+    guild_players = [(key, data) for key, data in players.items() if data['guild_id'] == ctx.guild.id and 'stats' in data]
+    
+    guild_players.sort(key=lambda x: x[1]['stats'].get('assists', 0), reverse=True)
+    
+    embed = discord.Embed(
+        title="🎯 Top 10 Assist Providers",
+        color=discord.Color.gold()
+    )
+    
+    for i, (key, data) in enumerate(guild_players[:10], 1):
+        member = ctx.guild.get_member(data['user_id'])
+        if member:
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            embed.add_field(
+                name=f"{medal} {member.display_name}",
+                value=f"{data['stats'].get('assists', 0)} assists",
+                inline=False
+            )
+    
+    await ctx.send(embed=embed)
+
+@bot.hybrid_command(name='lbdefense', description='Top 10 defenders')
+async def lbdefense(ctx):
+    """Leaderboard for tackles + interceptions"""
+    players = load_json(PLAYERS_FILE)
+    guild_players = [(key, data) for key, data in players.items() if data['guild_id'] == ctx.guild.id and 'stats' in data]
+    
+    guild_players.sort(key=lambda x: x[1]['stats'].get('tackles', 0) + x[1]['stats'].get('interceptions', 0), reverse=True)
+    
+    embed = discord.Embed(
+        title="🛡️ Top 10 Defenders",
+        color=discord.Color.gold()
+    )
+    
+    for i, (key, data) in enumerate(guild_players[:10], 1):
+        member = ctx.guild.get_member(data['user_id'])
+        if member:
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            total = data['stats'].get('tackles', 0) + data['stats'].get('interceptions', 0)
+            embed.add_field(
+                name=f"{medal} {member.display_name}",
+                value=f"{total} defensive actions",
+                inline=False
+            )
+    
+    await ctx.send(embed=embed)
+
+@bot.hybrid_command(name='lbsaves', description='Top 10 goalkeepers')
+async def lbsaves(ctx):
+    """Leaderboard for saves"""
+    players = load_json(PLAYERS_FILE)
+    guild_players = [(key, data) for key, data in players.items() if data['guild_id'] == ctx.guild.id and 'stats' in data]
+    
+    guild_players.sort(key=lambda x: x[1]['stats'].get('saves', 0), reverse=True)
+    
+    embed = discord.Embed(
+        title="🧤 Top 10 Goalkeepers",
+        color=discord.Color.gold()
+    )
+    
+    for i, (key, data) in enumerate(guild_players[:10], 1):
+        member = ctx.guild.get_member(data['user_id'])
+        if member:
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            embed.add_field(
+                name=f"{medal} {member.display_name}",
+                value=f"{data['stats'].get('saves', 0)} saves",
+                inline=False
+            )
+    
+    await ctx.send(embed=embed)              
 # Loan Command
 @bot.hybrid_command(name='loan', description='Loan player to another team')
 async def loan(ctx, player: discord.Member, team_owner: discord.Member):
