@@ -387,6 +387,174 @@ async def addbalance(ctx, member: discord.Member, amount: int):
     
     await ctx.send(f"✅ Added ${amount:,} to {member.mention}. New balance: ${player_data['balance']:,}")
 
+# My Options Command
+@bot.hybrid_command(name='myoptions', aliases=['myops'], description='View your active options contracts')
+async def myoptions(ctx):
+    """View all active options contracts"""
+    player_data = get_player_data(ctx.author.id, ctx.guild.id)
+    
+    options = player_data.get('options', [])
+    
+    if not options:
+        await ctx.send("❌ You don't have any active options contracts!")
+        return
+    
+    embed = discord.Embed(
+        title=f"📋 {ctx.author.display_name}'s Options Contracts",
+        description=f"Total Contracts: {len(options)}",
+        color=discord.Color.blue()
+    )
+    
+    for i, option in enumerate(options[:10], 1):
+        member = ctx.guild.get_member(option['player_id'])
+        player_name = member.display_name if member else "Unknown"
+        
+        embed.add_field(
+            name=f"{i}. {player_name}",
+            value=f"Type: {option['type']}\nStrike: ${option['strike_price']:,}\nExpiry: {option['expiry']}\nPremium: ${option['premium']:,}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+# Portfolio Command
+@bot.hybrid_command(name='portfolio', aliases=['port'], description='View portfolio')
+async def portfolio(ctx, member: discord.Member = None):
+    """View your or another user's portfolio"""
+    target = member or ctx.author
+    
+    if target.bot:
+        await ctx.send("❌ Bots don't have portfolios!")
+        return
+    
+    player_data = get_player_data(target.id, ctx.guild.id)
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    key = f"{ctx.guild.id}_{target.id}"
+    
+    embed = discord.Embed(
+        title=f"💼 {target.display_name}'s Portfolio",
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    # Balance
+    embed.add_field(name="💰 Cash Balance", value=f"${player_data['balance']:,}", inline=True)
+    
+    # Squad value
+    squad_value = 0
+    if key in fantasy_teams:
+        for player in fantasy_teams[key]['players']:
+            squad_value += get_stock_price(player['user_id'], ctx.guild.id)
+    
+    embed.add_field(name="⭐ Squad Value", value=f"${squad_value:,}", inline=True)
+    
+    # Total portfolio value
+    total_value = player_data['balance'] + squad_value
+    embed.add_field(name="📊 Total Portfolio", value=f"${total_value:,}", inline=True)
+    
+    # Squad players
+    if key in fantasy_teams and fantasy_teams[key]['players']:
+        squad_text = ""
+        for i, player in enumerate(fantasy_teams[key]['players'][:10], 1):
+            current_price = get_stock_price(player['user_id'], ctx.guild.id)
+            profit = current_price - player['price']
+            profit_emoji = "📈" if profit > 0 else "📉" if profit < 0 else "➖"
+            squad_text += f"{i}. <@{player['user_id']}> - ${current_price:,} {profit_emoji}\n"
+        
+        embed.add_field(name="Squad Players", value=squad_text, inline=False)
+    else:
+        embed.add_field(name="Squad Players", value="No players in squad", inline=False)
+    
+    # Stats if available
+    if 'stats' in player_data:
+        stats = player_data['stats']
+        stats_text = f"⚽ Goals: {stats.get('goals', 0)} | 🎯 Assists: {stats.get('assists', 0)}"
+        embed.add_field(name="Player Stats", value=stats_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Stock Market Command (enhanced version of market)
+@bot.hybrid_command(name='stockmarket', aliases=['sm'], description='View the stock market')
+async def stockmarket(ctx):
+    """View enhanced stock market"""
+    stocks = load_json(STOCKS_FILE)
+    guild_stocks = [(user_id.split('_')[1], data) for user_id, data in stocks.items() 
+                    if user_id.startswith(f"{ctx.guild.id}_")]
+    
+    # Sort by price
+    guild_stocks.sort(key=lambda x: x[1]['price'], reverse=True)
+    
+    embed = discord.Embed(
+        title="📈 Stock Market",
+        description="Player Card Values & Changes",
+        color=discord.Color.gold()
+    )
+    
+    # Top gainers
+    gainers = sorted(guild_stocks, key=lambda x: x[1].get('change_percent', 0), reverse=True)[:5]
+    gainers_text = ""
+    for user_id, data in gainers:
+        member = ctx.guild.get_member(int(user_id))
+        if member and not member.bot and data.get('change_percent', 0) > 0:
+            gainers_text += f"{member.display_name}: ${data['price']:,} (+{data['change_percent']}%)\n"
+    
+    if gainers_text:
+        embed.add_field(name="📈 Top Gainers", value=gainers_text, inline=False)
+    
+    # Top losers
+    losers = sorted(guild_stocks, key=lambda x: x[1].get('change_percent', 0))[:5]
+    losers_text = ""
+    for user_id, data in losers:
+        member = ctx.guild.get_member(int(user_id))
+        if member and not member.bot and data.get('change_percent', 0) < 0:
+            losers_text += f"{member.display_name}: ${data['price']:,} ({data['change_percent']}%)\n"
+    
+    if losers_text:
+        embed.add_field(name="📉 Top Losers", value=losers_text, inline=False)
+    
+    # Most valuable
+    valuable_text = ""
+    for i, (user_id, data) in enumerate(guild_stocks[:5], 1):
+        member = ctx.guild.get_member(int(user_id))
+        if member and not member.bot:
+            change = data.get('change_percent', 0)
+            change_emoji = "📈" if change > 0 else "📉" if change < 0 else "➖"
+            valuable_text += f"{i}. {member.display_name}: ${data['price']:,} {change_emoji}\n"
+    
+    if valuable_text:
+        embed.add_field(name="💎 Most Valuable", value=valuable_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Wallet Command (alias for balance)
+@bot.hybrid_command(name='wallet', aliases=['wal'], description='Check wallet balance')
+async def wallet(ctx, member: discord.Member = None):
+    """Check your or another user's wallet balance"""
+    target = member or ctx.author
+    player_data = get_player_data(target.id, ctx.guild.id)
+    
+    embed = discord.Embed(
+        title=f"👛 {target.display_name}'s Wallet",
+        color=discord.Color.green()
+    )
+    
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="💵 Cash", value=f"${player_data['balance']:,}", inline=False)
+    embed.add_field(name="💳 Card Value", value=f"${player_data['card_value']:,}", inline=True)
+    
+    # Calculate net worth
+    fantasy_teams = load_json(FANTASY_TEAMS_FILE)
+    key = f"{ctx.guild.id}_{target.id}"
+    squad_value = 0
+    
+    if key in fantasy_teams:
+        for player in fantasy_teams[key]['players']:
+            squad_value += get_stock_price(player['user_id'], ctx.guild.id)
+    
+    net_worth = player_data['balance'] + squad_value
+    embed.add_field(name="💰 Net Worth", value=f"${net_worth:,}", inline=True)
+    
+    await ctx.send(embed=embed)
 # Remove Balance (Admin only)
 @bot.hybrid_command(name='removebalance', aliases=['rb'], description='Remove balance from a user (Admin only)')
 @commands.has_permissions(administrator=True)
