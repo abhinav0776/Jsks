@@ -377,9 +377,7 @@ async def on_message(message):
                     from_user = bot.get_user(loan_data['from_user'])
                     if from_user:
                         await from_user.send(f"✅ Loan accepted! {loan_data['player_name']} loaned for {matches} matches.")
-                    return
-
-# Tutorial Command
+        # Tutorial Command
 @bot.hybrid_command(name='tutorial', description='View the interactive bot tutorial')
 async def tutorial(ctx):
     """Display an interactive tutorial"""
@@ -401,11 +399,13 @@ async def tutorial(ctx):
                     'title': '👤 Player Management',
                     'description': 'Commands for managing your account',
                     'fields': [
-                        {'name': '+register', 'value': 'Create your account and get starting balance', 'inline': False},
+                        {'name': '+register', 'value': 'Create your account and get starting balance (50,000)', 'inline': False},
                         {'name': '+balance or +bal', 'value': 'Check your current balance', 'inline': False},
-                        {'name': '+daily', 'value': 'Claim your daily reward', 'inline': False},
+                        {'name': '+wallet or +wal', 'value': 'Check wallet balance with net worth', 'inline': False},
+                        {'name': '+daily', 'value': 'Claim your daily reward (1,000)', 'inline': False},
                         {'name': '+card @user', 'value': 'Generate player card for a user', 'inline': False},
-                        {'name': '+profile @user', 'value': 'View player profile with stats', 'inline': False}
+                        {'name': '+profile @user', 'value': 'View player profile with stats', 'inline': False},
+                        {'name': '+portfolio or +port', 'value': 'View complete portfolio', 'inline': False}
                     ]
                 },
                 {
@@ -417,6 +417,96 @@ async def tutorial(ctx):
                         {'name': '+deleteteam <teamname>', 'value': 'Delete a team (owner only)', 'inline': False},
                         {'name': '+teamlist', 'value': 'View all teams in the server', 'inline': False},
                         {'name': '+vc @user', 'value': 'Set vice-captain (team owner only)', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '⭐ Fantasy Squad Commands',
+                    'description': 'Build your fantasy team with real users',
+                    'fields': [
+                        {'name': '+createfantasy', 'value': 'Create your fantasy squad', 'inline': False},
+                        {'name': '+buyfantasy @user', 'value': 'Buy a user card for your fantasy team', 'inline': False},
+                        {'name': '+sellfantasy @user', 'value': 'Sell a user card from your fantasy team', 'inline': False},
+                        {'name': '+viewsquad or +vsq', 'value': 'View your fantasy squad', 'inline': False},
+                        {'name': '+deletefantasy', 'value': 'Delete your fantasy squad', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '🎯 Fantasy Teams (Dream XI Style)',
+                    'description': 'Create and invest in fantasy teams',
+                    'fields': [
+                        {'name': '+fantasyteamcreate <name>', 'value': 'Create a fantasy team (Dream XI style)', 'inline': False},
+                        {'name': '+fantasybuy <id> <amount>', 'value': 'Buy shares of a fantasy team', 'inline': False},
+                        {'name': '+fantasysell <id> <amount>', 'value': 'Sell shares of a fantasy team', 'inline': False},
+                        {'name': '+fantasylist or +fl', 'value': 'List all fantasy teams with IDs', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '💰 Market & Trading',
+                    'description': 'Trade and invest in user cards',
+                    'fields': [
+                        {'name': '+price @user', 'value': 'Check the current price of a user card', 'inline': False},
+                        {'name': '+market', 'value': 'View the transfer market', 'inline': False},
+                        {'name': '+stockmarket or +sm', 'value': 'View enhanced stock market with gainers/losers', 'inline': False},
+                        {'name': '+transfer @user @team_owner', 'value': 'Initiate transfer to another team', 'inline': False},
+                        {'name': '+loan @user @team_owner', 'value': 'Initiate loan to another team', 'inline': False},
+                        {'name': '+myoptions or +myops', 'value': 'View your active options contracts', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '📊 Stats & Leaderboards',
+                    'description': 'Player statistics and rankings',
+                    'fields': [
+                        {'name': '+addstats @user G A I T S', 'value': 'Add stats (Goals, Assists, Interceptions, Tackles, Saves) - Admin only', 'inline': False},
+                        {'name': '+lbgoals', 'value': 'Top 10 goal scorers', 'inline': False},
+                        {'name': '+lbassists', 'value': 'Top 10 assist providers', 'inline': False},
+                        {'name': '+lbdefense', 'value': 'Top 10 defenders', 'inline': False},
+                        {'name': '+lbsaves', 'value': 'Top 10 goalkeepers', 'inline': False},
+                        {'name': '+leaderboard or +lb', 'value': 'View richest players', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '⚽ Match & Predictions',
+                    'description': 'Predict match outcomes',
+                    'fields': [
+                        {'name': '+predictmatchadd <team1> vs <team2>', 'value': 'Add a match for predictions (Admin)', 'inline': False},
+                        {'name': '+matchremove <match_id>', 'value': 'Remove a match (Admin)', 'inline': False},
+                        {'name': '+predict <match_id> <team_name>', 'value': 'Predict match winner', 'inline': False},
+                        {'name': '+predictions', 'value': 'View all active matches', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '⚙️ Admin Commands',
+                    'description': 'Server administration',
+                    'fields': [
+                        {'name': '+addbalance @user <amount>', 'value': 'Add balance to a user', 'inline': False},
+                        {'name': '+removebalance @user <amount>', 'value': 'Remove balance from a user', 'inline': False},
+                        {'name': '+setprefix <prefix>', 'value': 'Change bot prefix', 'inline': False},
+                        {'name': '+teamlogs <channel>', 'value': 'Set team approval log channel', 'inline': False},
+                        {'name': '+ban @user', 'value': 'Ban a user from using the bot', 'inline': False},
+                        {'name': '+unban @user', 'value': 'Unban a user', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '🎮 Other Commands',
+                    'description': 'Additional features',
+                    'fields': [
+                        {'name': '+stats', 'value': 'View bot statistics', 'inline': False},
+                        {'name': '+ping', 'value': 'Check bot latency', 'inline': False},
+                        {'name': '+whereami', 'value': 'Show current server info', 'inline': False},
+                        {'name': '+troll', 'value': 'Send a random funny message', 'inline': False},
+                        {'name': '+trace', 'value': 'Get detailed bot trace info', 'inline': False},
+                        {'name': '+help', 'value': 'Show all available commands', 'inline': False}
+                    ]
+                },
+                {
+                    'title': '💡 Pro Tips',
+                    'description': 'Advanced features and tips',
+                    'fields': [
+                        {'name': '📈 Stock Prices', 'value': 'Player card prices are based on their stats! Better performance = higher value', 'inline': False},
+                        {'name': '📝 Auto Stats', 'value': 'Admins can reply to raw stats messages to automatically add stats to all players', 'inline': False},
+                        {'name': '💼 Portfolio Management', 'value': 'Track your total wealth with +portfolio to see cash + squad value', 'inline': False},
+                        {'name': '🤝 Transfers & Loans', 'value': 'All transfer and loan negotiations happen via DM for privacy', 'inline': False},
+                        {'name': '🎯 Fantasy Teams', 'value': 'Create Dream XI style teams and let others invest - you get the money!', 'inline': False}
                     ]
                 }
             ]
@@ -430,8 +520,13 @@ async def tutorial(ctx):
             )
             for field in page['fields']:
                 embed.add_field(name=field['name'], value=field['value'], inline=field.get('inline', False))
-            embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.pages)}")
+            embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.pages)} • Use buttons to navigate")
             return embed
+        
+        @discord.ui.button(label='⏮️ First', style=discord.ButtonStyle.gray)
+        async def first_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            self.current_page = 0
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
         
         @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.blurple)
         async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -444,10 +539,19 @@ async def tutorial(ctx):
             if self.current_page < len(self.pages) - 1:
                 self.current_page += 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        
+        @discord.ui.button(label='⏭️ Last', style=discord.ButtonStyle.gray)
+        async def last_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            self.current_page = len(self.pages) - 1
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        
+        @discord.ui.button(label='🛑 Stop', style=discord.ButtonStyle.red)
+        async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.edit_message(view=None)
+            self.stop()
     
     view = TutorialView()
     await ctx.send(embed=view.get_embed(), view=view)
-
 # Player Registration
 @bot.hybrid_command(name='register', description='Register to play Hand Football Fantasy')
 async def register(ctx):
