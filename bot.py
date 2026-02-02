@@ -1998,7 +1998,5 @@ if __name__ == "__main__":
     print("Starting Hand Football Support Bot...")
     print("Make sure to set your bot token!")
     
-    TOKEN = os.getenv('DISCORD_BOT_TOKEN') or 'YOUR_BOT_TOKEN_HERE'
-    
-    if TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        print("⚠️ WARNING: Please set your Discord bot token!")
+    TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+    bot.run(TOKEN)
