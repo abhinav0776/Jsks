@@ -1932,7 +1932,7 @@ class RaceEngine:
                     )
                     driver.radio_messages = driver.radio_messages[-5:]
                 
-                view = RaceControlView(embed.add_field(
+                view = RaceControlView(embed.add_field)
                         name="📻 Team Radio",
                         value="\n".join(recent_messages),
                         inline=False
