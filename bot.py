@@ -1770,8 +1770,7 @@ async def help_cmd(interaction: discord.Interaction):
 # RUN BOT
 # ============================================================================
 
-if __name__ == "__main__":
-    token = os.getenv('DISCORD_TOKEN')
-if token is None:
-    raise ValueError("Discord token not found!")
-bot.run(token)
+TOKEN = os.getenv('DISCORD_TOKEN')
+if not TOKEN:
+    raise ValueError("No token found! Set DISCORD_TOKEN environment variable")
+bot.run(TOKEN)
