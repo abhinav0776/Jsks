@@ -1795,5 +1795,6 @@ if __name__ == "__main__":
     print("4. Paste token below")
     print("\n" + "=" * 60 + "\n")
     
-TOKEN = os.getenv("TOKEN")
-bot.run(TOKEN)
+token = os.getenv('DISCORD_TOKEN')
+if token is None:
+    raise ValueError("Discord token not found!")
