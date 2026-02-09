@@ -1796,15 +1796,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     
 TOKEN = os.getenv("TOKEN")
-    
-    if not TOKEN:
-        print("❌ No token provided!")
-        exit(1)
-    
-    try:
-        print("\n🚀 Starting bot...\n")
-        bot.run(TOKEN)
-    except discord.LoginFailure:
-        print("\n❌ Invalid token!")
-    except Exception as e:
-        print(f"\n❌ Error: {e}")
+bot.run(TOKEN)
