@@ -1,4 +1,3 @@
-
 # F1 DISCORD RACING BOT - ULTRA COMPLETE SYSTEM
 # 300+ Features, DM Race Controls, Advanced Simulation
 # Compatible with Pydroid 3
