@@ -10,6 +10,7 @@ import random
 import sqlite3
 from datetime import datetime
 from typing import List, Dict, Optional
+import os
 
 # ============================================================================
 # DATABASE SYSTEM - COMPLETE
@@ -1794,7 +1795,7 @@ if __name__ == "__main__":
     print("4. Paste token below")
     print("\n" + "=" * 60 + "\n")
     
-    TOKEN = bot.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv("TOKEN")
     
     if not TOKEN:
         print("❌ No token provided!")
