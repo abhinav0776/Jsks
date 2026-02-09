@@ -1774,3 +1774,4 @@ if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
 if token is None:
     raise ValueError("Discord token not found!")
+bot.run(token)
