@@ -1771,30 +1771,6 @@ async def help_cmd(interaction: discord.Interaction):
 # ============================================================================
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🏎️  F1 DISCORD RACING BOT - COMPLETE SYSTEM")
-    print("=" * 60)
-    print("\n📋 Features:")
-    print("  ✅ Ultra-realistic race simulation")
-    print("  ✅ AI opponents with unique stats")
-    print("  ✅ Dynamic weather system")
-    print("  ✅ Advanced tyre & fuel management")
-    print("  ✅ ERS & DRS systems")
-    print("  ✅ Overtaking & defending mechanics")
-    print("  ✅ Damage & reliability simulation")
-    print("  ✅ Car upgrades & garage")
-    print("  ✅ Economy & sponsorships")
-    print("  ✅ Leagues & championships")
-    print("  ✅ Interactive race buttons")
-    print("  ✅ Complete statistics tracking")
-    print("\n" + "=" * 60)
-    print("\n⚙️  Setup:")
-    print("1. pip install discord.py")
-    print("2. Get bot token from Discord Developer Portal")
-    print("3. Enable 'Message Content Intent'")
-    print("4. Paste token below")
-    print("\n" + "=" * 60 + "\n")
-    
-token = os.getenv('DISCORD_TOKEN')
+    token = os.getenv('DISCORD_TOKEN')
 if token is None:
     raise ValueError("Discord token not found!")
