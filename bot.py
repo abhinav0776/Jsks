@@ -1807,12 +1807,3 @@ if __name__ == "__main__":
         print("\n❌ Invalid token!")
     except Exception as e:
         print(f"\n❌ Error: {e}")
-✅ ERS & DRS systems
-✅ Overtaking mechanics with multiple outcomes
-✅ Damage & reliability modeling
-✅ Car upgrades and garage system
-✅ Economy with money, sponsors, loans
-✅ Leagues with standings
-✅ Complete database persistence
-✅ 6 tracks with unique characteristics
-Ready to use in Pydroid 3! 🏎️🏁
