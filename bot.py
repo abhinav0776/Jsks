@@ -1,14 +1,3 @@
-# # ============================================================================
-# F1 ULTIMATE RACING BOT - PRODUCTION GRADE
-# # ============================================================================
-# 100+ Commands | 150+ UI Buttons | Ultra-Realistic F1 Simulation
-# Deployment Ready: Railway, Heroku, AWS, Azure
-# Database: SQLite (dev) / PostgreSQL (production)
-# Author: F1 Racing Bot Team
-# Version: 2.0.0
-# License: MIT
-# # ============================================================================
-
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -20,6 +9,13 @@ import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import logging
+
+# ✅ This MUST come before any class definitions
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('F1Bot')
 
 # # ============================================================================
 # DATABASE SYSTEM - PRODUCTION READY
