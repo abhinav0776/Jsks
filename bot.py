@@ -9,6 +9,10 @@ import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import logging
+# Intents
+intents = discord.Intents.default()
+intents.message_content = True  # Required for prefix commands
+bot = commands.Bot(command_prefix='+', intents=intents)
 
 # ✅ This MUST come before any class definitions
 logging.basicConfig(
