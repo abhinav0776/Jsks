@@ -22,21 +22,6 @@ from typing import List, Dict, Optional, Tuple
 import logging
 
 # # ============================================================================
-# CONFIGURATION & LOGGING
-# # ============================================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('F1Bot')
-
-# Environment variables for deployment
-DATABASE_URL = os.getenv('DATABASE_URL', 'f1_racing.db')
-BOT_TOKEN = os.getenv('BOT_TOKEN', None)
-ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
-
-# # ============================================================================
 # DATABASE SYSTEM - PRODUCTION READY
 # # ============================================================================
 
