@@ -5267,8 +5267,6 @@ async def notify(interaction: discord.Interaction):
     embed.add_field(name="Tournament Matches", value="✅ Enabled", inline=True)
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
-    F1 Racing Bot - Race Management Commands
-I'll provide the comprehensive race management commands to complete your F1 racing bot. These will integrate with your existing RaceEngine class.
 # ============================================================================
 # RACE MANAGEMENT COMMANDS - Complete System
 # ============================================================================
