@@ -3159,7 +3159,7 @@ async def ranking(interaction: discord.Interaction, category: app_commands.Choic
 # # ============================================================================
 
 if __name__ == "__main__":
-    token = os.getenv('DISCORD_TOKEN')
-if token is None:
-    raise ValueError("Discord token not found!")
-bot.run(token)
+    token = os.getenv('DISCORD_TOKEN')  # or 'BOT_TOKEN' — be consistent!
+    if token is None:
+        raise ValueError("DISCORD_TOKEN environment variable not set!")
+    bot.run(token)
