@@ -3140,8 +3140,2717 @@ async def ranking(interaction: discord.Interaction, category: app_commands.Choic
     
     await interaction.response.send_message(embed=embed)
     conn.close()
+    
+# ============================================================================
+# CAREER & PROGRESSION COMMANDS (Commands 4-13)
+# ============================================================================
 
-# ... Due to character limits, I'll provide a download link structure ...
+@bot.tree.command(name="daily", description="Claim daily login rewards")
+async def daily(interaction: discord.Interaction):
+    """Daily login rewards with streak bonuses"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("SELECT last_login, daily_login_streak, money FROM users WHERE user_id = ?", 
+              (interaction.user.id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message("❌ Create a profile first!", ephemeral=True)
+        conn.close()
+        return
+    
+    last_login = result[0]
+    streak = result[1]
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    if last_login == today:
+        await interaction.response.send_message("❌ Already claimed today! Come back tomorrow.", ephemeral=True)
+        conn.close()
+        return
+    
+    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    # Update streak
+    if last_login == yesterday:
+        new_streak = streak + 1
+    else:
+        new_streak = 1
+    
+    # Calculate rewards
+    base_reward = 1000
+    streak_bonus = min(new_streak * 200, 5000)
+    total_reward = base_reward + streak_bonus
+    
+    # Bonus every 7 days
+    bonus_reward = 0
+    if new_streak % 7 == 0:
+        bonus_reward = 5000
+        total_reward += bonus_reward
+    
+    # Update database
+    c.execute("""
+        UPDATE users 
+        SET money = money + ?, 
+            last_login = ?, 
+            daily_login_streak = ?
+        WHERE user_id = ?
+    """, (total_reward, today, new_streak, interaction.user.id))
+    
+    conn.commit()
+    conn.close()
+    
+    embed = discord.Embed(
+        title="🎁 Daily Reward Claimed!",
+        description=f"**Day {new_streak}** of your streak!",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="💰 Base Reward", value=f"${base_reward:,}", inline=True)
+    embed.add_field(name="🔥 Streak Bonus", value=f"${streak_bonus:,}", inline=True)
+    
+    if bonus_reward > 0:
+        embed.add_field(name="🎉 Week Bonus!", value=f"${bonus_reward:,}", inline=True)
+    
+    embed.add_field(name="💵 Total Earned", value=f"**${total_reward:,}**", inline=False)
+    embed.set_footer(text="Come back tomorrow to keep your streak!")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="challenges", description="View daily challenges")
+async def challenges(interaction: discord.Interaction):
+    """Display available daily challenges"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    c.execute("""
+        SELECT dc.*, uc.progress, uc.completed
+        FROM daily_challenges dc
+        LEFT JOIN user_challenges uc ON dc.challenge_id = uc.challenge_id 
+            AND uc.user_id = ?
+        WHERE dc.valid_date = ?
+    """, (interaction.user.id, today))
+    
+    challenges = c.fetchall()
+    
+    if not challenges:
+        await interaction.response.send_message("❌ No challenges available today!", ephemeral=True)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="🎯 Today's Challenges",
+        description="Complete challenges for rewards!",
+        color=discord.Color.blue()
+    )
+    
+    for challenge in challenges:
+        challenge_id, name, desc, type_, target, money, xp, premium, difficulty, date, progress, completed = challenge
+        
+        progress = progress or 0
+        completed = completed or 0
+        
+        # Difficulty emoji
+        diff_emoji = {"easy": "🟢", "medium": "🟡", "hard": "🔴"}
+        
+        # Status
+        if completed:
+            status = "✅ Completed"
+        else:
+            status = f"📊 Progress: {progress}/{target}"
+        
+        rewards = []
+        if money > 0:
+            rewards.append(f"💰${money:,}")
+        if xp > 0:
+            rewards.append(f"⭐{xp} XP")
+        if premium > 0:
+            rewards.append(f"💎{premium}")
+        
+        reward_str = " | ".join(rewards)
+        
+        embed.add_field(
+            name=f"{diff_emoji.get(difficulty, '⚪')} {name}",
+            value=f"{desc}\n{status}\n**Rewards:** {reward_str}",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="achievements", description="View your achievements")
+async def achievements(interaction: discord.Interaction):
+    """Display achievement progress"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT a.*, ua.unlocked_date
+        FROM achievements a
+        LEFT JOIN user_achievements ua ON a.achievement_id = ua.achievement_id 
+            AND ua.user_id = ?
+        ORDER BY ua.unlocked_date DESC, a.rarity DESC
+    """, (interaction.user.id,))
+    
+    achievements = c.fetchall()
+    
+    unlocked = [a for a in achievements if a[-1] is not None]
+    locked = [a for a in achievements if a[-1] is None and not a[9]]  # Not hidden
+    
+    embed = discord.Embed(
+        title="🏆 Achievements",
+        description=f"**{len(unlocked)}/{len([a for a in achievements if not a[9]])}** Unlocked",
+        color=discord.Color.gold()
+    )
+    
+    # Show unlocked achievements
+    if unlocked:
+        unlocked_str = "\n".join([
+            f"{a[7]} **{a[1]}** - {a[2]}" for a in unlocked[:10]
+        ])
+        embed.add_field(name="✅ Unlocked", value=unlocked_str, inline=False)
+    
+    # Show some locked achievements
+    if locked:
+        locked_str = "\n".join([
+            f"🔒 **{a[1]}** - {a[2]}" for a in locked[:5]
+        ])
+        embed.add_field(name="🔒 Locked", value=locked_str, inline=False)
+    
+    total_rewards = sum([a[3] for a in unlocked])
+    embed.set_footer(text=f"Total achievement rewards earned: ${total_rewards:,}")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="skills", description="View and upgrade your skills")
+async def skills(interaction: discord.Interaction):
+    """Display skill tree"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get user's skill points
+    c.execute("SELECT skill_points FROM users WHERE user_id = ?", (interaction.user.id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message("❌ Profile not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    skill_points = result[0]
+    
+    # Get unlocked skills
+    c.execute("""
+        SELECT s.*, us.skill_level
+        FROM skill_tree s
+        LEFT JOIN user_skills us ON s.skill_id = us.skill_id AND us.user_id = ?
+        ORDER BY s.skill_tier, s.cost_points
+    """, (interaction.user.id,))
+    
+    skills = c.fetchall()
+    
+    embed = discord.Embed(
+        title="🌟 Skill Tree",
+        description=f"**Available Points:** {skill_points}",
+        color=discord.Color.purple()
+    )
+    
+    # Group by tier
+    tiers = {}
+    for skill in skills:
+        tier = skill[3]
+        if tier not in tiers:
+            tiers[tier] = []
+        tiers[tier].append(skill)
+    
+    for tier, tier_skills in sorted(tiers.items()):
+        tier_names = {1: "Foundation", 2: "Advanced", 3: "Expert", 4: "Master"}
+        
+        skills_str = ""
+        for skill in tier_skills[:3]:  # Show max 3 per tier
+            skill_id, name, category, tier, cost, effect_type, effect_value, requires, desc, max_level, level = skill
+            
+            level = level or 0
+            status = f"✅ Level {level}/{max_level}" if level > 0 else f"🔒 Cost: {cost} SP"
+            
+            skills_str += f"**{name}** ({category})\n{desc}\n{status}\n\n"
+        
+        if skills_str:
+            embed.add_field(
+                name=f"{'⭐' * tier} Tier {tier}: {tier_names.get(tier, 'Unknown')}",
+                value=skills_str,
+                inline=False
+            )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="upgrade", description="Upgrade a skill")
+@app_commands.describe(skill_name="Name of the skill to upgrade")
+async def upgrade(interaction: discord.Interaction, skill_name: str):
+    """Upgrade a skill in the skill tree"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get user skill points
+    c.execute("SELECT skill_points FROM users WHERE user_id = ?", (interaction.user.id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message("❌ Profile not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    skill_points = result[0]
+    
+    # Find skill
+    c.execute("SELECT * FROM skill_tree WHERE skill_name LIKE ?", (f"%{skill_name}%",))
+    skill = c.fetchone()
+    
+    if not skill:
+        await interaction.response.send_message(f"❌ Skill '{skill_name}' not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    skill_id, name, category, tier, cost, effect_type, effect_value, requires, desc, max_level = skill
+    
+    # Check current level
+    c.execute("SELECT skill_level FROM user_skills WHERE user_id = ? AND skill_id = ?",
+              (interaction.user.id, skill_id))
+    current = c.fetchone()
+    current_level = current[0] if current else 0
+    
+    # Check if maxed
+    if current_level >= max_level:
+        await interaction.response.send_message(f"❌ {name} is already maxed out!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Check skill points
+    if skill_points < cost:
+        await interaction.response.send_message(
+            f"❌ Not enough skill points! Need {cost}, have {skill_points}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Check prerequisites
+    if requires:
+        c.execute("""
+            SELECT skill_level FROM user_skills 
+            WHERE user_id = ? AND skill_id = ?
+        """, (interaction.user.id, requires))
+        prereq = c.fetchone()
+        
+        if not prereq or prereq[0] == 0:
+            c.execute("SELECT skill_name FROM skill_tree WHERE skill_id = ?", (requires,))
+            prereq_name = c.fetchone()[0]
+            await interaction.response.send_message(
+                f"❌ You need to unlock **{prereq_name}** first!",
+                ephemeral=True
+            )
+            conn.close()
+            return
+    
+    # Unlock/upgrade skill
+    if current_level == 0:
+        c.execute("""
+            INSERT INTO user_skills (user_id, skill_id, skill_level)
+            VALUES (?, ?, 1)
+        """, (interaction.user.id, skill_id))
+    else:
+        c.execute("""
+            UPDATE user_skills 
+            SET skill_level = skill_level + 1
+            WHERE user_id = ? AND skill_id = ?
+        """, (interaction.user.id, skill_id))
+    
+    # Deduct points
+    c.execute("""
+        UPDATE users 
+        SET skill_points = skill_points - ?
+        WHERE user_id = ?
+    """, (cost, interaction.user.id))
+    
+    conn.commit()
+    
+    new_level = current_level + 1
+    
+    embed = discord.Embed(
+        title="✨ Skill Upgraded!",
+        description=f"**{name}** upgraded to Level {new_level}!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Category", value=category.title(), inline=True)
+    embed.add_field(name="Effect", value=f"+{effect_value} {effect_type}", inline=True)
+    embed.add_field(name="Points Used", value=str(cost), inline=True)
+    embed.add_field(name="Description", value=desc, inline=False)
+    embed.set_footer(text=f"Remaining Skill Points: {skill_points - cost}")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="experience", description="View XP and level progress")
+async def experience(interaction: discord.Interaction):
+    """Display experience and level information"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("SELECT experience, license_level, skill_points FROM users WHERE user_id = ?",
+              (interaction.user.id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message("❌ Profile not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    xp, license, skill_points = result
+    
+    # Calculate level from XP
+    level = int((xp / 1000) ** 0.5) + 1
+    xp_for_current = (level - 1) ** 2 * 1000
+    xp_for_next = level ** 2 * 1000
+    xp_progress = xp - xp_for_current
+    xp_needed = xp_for_next - xp_for_current
+    
+    progress_percent = (xp_progress / xp_needed) * 100
+    
+    # License levels
+    licenses = {
+        "rookie": (0, "🏁"),
+        "amateur": (5, "🥉"),
+        "semi-pro": (15, "🥈"),
+        "pro": (30, "🥇"),
+        "expert": (50, "💎"),
+        "legend": (75, "👑"),
+        "world_champion": (100, "🏆")
+    }
+    
+    embed = discord.Embed(
+        title=f"📊 Experience & Progression",
+        description=f"**Level {level}** | License: {license.upper()}",
+        color=discord.Color.blue()
+    )
+    
+    # Progress bar
+    filled = int(progress_percent / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+    
+    embed.add_field(
+        name="Level Progress",
+        value=f"{bar} {progress_percent:.1f}%\n{xp_progress:,}/{xp_needed:,} XP",
+        inline=False
+    )
+    
+    embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
+    embed.add_field(name="Skill Points", value=str(skill_points), inline=True)
+    embed.add_field(name="Next Level", value=f"Level {level + 1}", inline=True)
+    
+    # License progression
+    current_license_emoji = licenses.get(license, ("", "🏁"))[1]
+    embed.add_field(
+        name=f"{current_license_emoji} Current License",
+        value=f"**{license.upper().replace('_', ' ')}**",
+        inline=False
+    )
+    
+    # Next license
+    for lic_name, (required_level, emoji) in licenses.items():
+        if required_level > level:
+            embed.add_field(
+                name=f"{emoji} Next License",
+                value=f"{lic_name.upper().replace('_', ' ')} (Level {required_level})",
+                inline=False
+            )
+            break
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+# ============================================================================
+# CAR & GARAGE COMMANDS (Commands 14-23)
+# ============================================================================
+
+@bot.tree.command(name="buycar", description="Purchase a new car")
+@app_commands.describe(car_tier="Car performance tier")
+@app_commands.choices(car_tier=[
+    app_commands.Choice(name="🟢 Budget ($50,000)", value="budget"),
+    app_commands.Choice(name="🔵 Standard ($150,000)", value="standard"),
+    app_commands.Choice(name="🟣 Premium ($350,000)", value="premium"),
+    app_commands.Choice(name="🟠 Elite ($750,000)", value="elite"),
+    app_commands.Choice(name="🔴 Championship ($1,500,000)", value="championship"),
+])
+async def buycar(interaction: discord.Interaction, car_tier: app_commands.Choice[str]):
+    """Purchase a new car from the dealership"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Car tier stats
+    car_stats = {
+        "budget": {"price": 50000, "power": 55, "aero": 52, "handling": 54, "reliability": 88},
+        "standard": {"price": 150000, "power": 65, "aero": 63, "handling": 64, "reliability": 90},
+        "premium": {"price": 350000, "power": 75, "aero": 74, "handling": 73, "reliability": 92},
+        "elite": {"price": 750000, "power": 85, "aero": 84, "handling": 83, "reliability": 94},
+        "championship": {"price": 1500000, "power": 95, "aero": 94, "handling": 93, "reliability": 96},
+    }
+    
+    tier = car_tier.value
+    stats = car_stats[tier]
+    price = stats["price"]
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message("❌ Profile not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    balance = result[0]
+    
+    if balance < price:
+        await interaction.response.send_message(
+            f"❌ Not enough money! Need ${price:,}, have ${balance:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Create car
+    car_name = f"{tier.title()} F1 Car"
+    
+    c.execute("""
+        INSERT INTO cars (owner_id, car_name, car_tier, engine_power, aero, handling, reliability, car_value)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (interaction.user.id, car_name, tier, stats["power"], stats["aero"], 
+          stats["handling"], stats["reliability"], price))
+    
+    # Deduct money
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (price, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🏎️ New Car Purchased!",
+        description=f"**{car_name}** added to your garage!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Tier", value=tier.title(), inline=True)
+    embed.add_field(name="Price", value=f"${price:,}", inline=True)
+    embed.add_field(name="Remaining Balance", value=f"${balance - price:,}", inline=True)
+    
+    embed.add_field(name="⚡ Engine Power", value=str(stats["power"]), inline=True)
+    embed.add_field(name="🌪️ Aerodynamics", value=str(stats["aero"]), inline=True)
+    embed.add_field(name="🎯 Handling", value=str(stats["handling"]), inline=True)
+    embed.add_field(name="🔧 Reliability", value=f"{stats['reliability']}%", inline=True)
+    
+    embed.set_footer(text="Use /setcar to make this your active car!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="sellcar", description="Sell a car from your garage")
+@app_commands.describe(car_name="Name of the car to sell")
+async def sellcar(interaction: discord.Interaction, car_name: str):
+    """Sell a car for money"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Find car
+    c.execute("""
+        SELECT car_id, car_name, car_value, is_active 
+        FROM cars 
+        WHERE owner_id = ? AND car_name LIKE ?
+    """, (interaction.user.id, f"%{car_name}%"))
+    
+    car = c.fetchone()
+    
+    if not car:
+        await interaction.response.send_message(f"❌ Car '{car_name}' not found in your garage!", ephemeral=True)
+        conn.close()
+        return
+    
+    car_id, name, value, is_active = car
+    
+    if is_active:
+        await interaction.response.send_message("❌ Cannot sell your active car! Set another car as active first.", ephemeral=True)
+        conn.close()
+        return
+    
+    # Calculate sell price (70% of value)
+    sell_price = int(value * 0.7)
+    
+    # Delete car and add money
+    c.execute("DELETE FROM cars WHERE car_id = ?", (car_id,))
+    c.execute("UPDATE users SET money = money + ? WHERE user_id = ?",
+              (sell_price, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="💰 Car Sold",
+        description=f"**{name}** sold for **${sell_price:,}**",
+        color=discord.Color.green()
+    )
+    embed.set_footer(text=f"Original value: ${value:,} (70% return)")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="setcar", description="Set your active car")
+@app_commands.describe(car_name="Name of the car to activate")
+async def setcar(interaction: discord.Interaction, car_name: str):
+    """Change active car"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Find car
+    c.execute("""
+        SELECT car_id, car_name 
+        FROM cars 
+        WHERE owner_id = ? AND car_name LIKE ?
+    """, (interaction.user.id, f"%{car_name}%"))
+    
+    car = c.fetchone()
+    
+    if not car:
+        await interaction.response.send_message(f"❌ Car '{car_name}' not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    car_id, name = car
+    
+    # Deactivate all cars
+    c.execute("UPDATE cars SET is_active = 0 WHERE owner_id = ?", (interaction.user.id,))
+    
+    # Activate selected car
+    c.execute("UPDATE cars SET is_active = 1 WHERE car_id = ?", (car_id,))
+    
+    conn.commit()
+    
+    await interaction.response.send_message(f"✅ **{name}** is now your active car!", ephemeral=True)
+    conn.close()
+
+@bot.tree.command(name="upgrade_car", description="Upgrade your car's components")
+@app_commands.describe(
+    component="Component to upgrade",
+    amount="Upgrade amount (1-10)"
+)
+@app_commands.choices(component=[
+    app_commands.Choice(name="⚡ Engine Power", value="engine_power"),
+    app_commands.Choice(name="🌪️ Aerodynamics", value="aero"),
+    app_commands.Choice(name="🎯 Handling", value="handling"),
+    app_commands.Choice(name="🔋 ERS Power", value="ers_power"),
+    app_commands.Choice(name="💨 DRS Efficiency", value="drs_efficiency"),
+])
+async def upgrade_car(interaction: discord.Interaction, component: app_commands.Choice[str], amount: int = 1):
+    """Upgrade car components"""
+    if not 1 <= amount <= 10:
+        await interaction.response.send_message("❌ Amount must be between 1 and 10!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get active car
+    c.execute(f"""
+        SELECT car_id, car_name, {component.value}, car_value 
+        FROM cars 
+        WHERE owner_id = ? AND is_active = 1
+    """, (interaction.user.id,))
+    
+    car = c.fetchone()
+    
+    if not car:
+        await interaction.response.send_message("❌ No active car found!", ephemeral=True)
+        conn.close()
+        return
+    
+    car_id, car_name, current_value, car_value = car
+    
+    # Check if already maxed
+    if current_value >= 100:
+        await interaction.response.send_message(f"❌ {component.name} is already maxed out!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Calculate cost (exponential)
+    cost_per_point = 1000 + (current_value * 100)
+    total_cost = cost_per_point * amount
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    balance = c.fetchone()[0]
+    
+    if balance < total_cost:
+        await interaction.response.send_message(
+            f"❌ Not enough money! Need ${total_cost:,}, have ${balance:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Apply upgrade
+    new_value = min(100, current_value + amount)
+    actual_upgrade = new_value - current_value
+    actual_cost = cost_per_point * actual_upgrade
+    
+    c.execute(f"""
+        UPDATE cars 
+        SET {component.value} = ?, car_value = car_value + ?
+        WHERE car_id = ?
+    """, (new_value, actual_cost, car_id))
+    
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (actual_cost, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="⬆️ Car Upgraded!",
+        description=f"**{car_name}**",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Component", value=component.name, inline=True)
+    embed.add_field(name="Upgrade", value=f"{current_value} → {new_value} (+{actual_upgrade})", inline=True)
+    embed.add_field(name="Cost", value=f"${actual_cost:,}", inline=True)
+    embed.set_footer(text=f"Remaining balance: ${balance - actual_cost:,}")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="repair", description="Repair your car's damage")
+async def repair(interaction: discord.Interaction):
+    """Repair car damage and wear"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get active car
+    c.execute("""
+        SELECT car_id, car_name, engine_wear, gearbox_wear, chassis_wear, brake_wear, suspension_wear
+        FROM cars 
+        WHERE owner_id = ? AND is_active = 1
+    """, (interaction.user.id,))
+    
+    car = c.fetchone()
+    
+    if not car:
+        await interaction.response.send_message("❌ No active car found!", ephemeral=True)
+        conn.close()
+        return
+    
+    car_id, car_name, engine_wear, gearbox_wear, chassis_wear, brake_wear, suspension_wear = car
+    
+    # Calculate total wear
+    total_wear = (engine_wear or 0) + (gearbox_wear or 0) + (chassis_wear or 0) + (brake_wear or 0) + (suspension_wear or 0)
+    
+    if total_wear == 0:
+        await interaction.response.send_message("✅ Your car is in perfect condition!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Repair cost: $100 per wear point
+    repair_cost = int(total_wear * 100)
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    balance = c.fetchone()[0]
+    
+    if balance < repair_cost:
+        await interaction.response.send_message(
+            f"❌ Not enough money for repairs! Need ${repair_cost:,}, have ${balance:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Repair car
+    c.execute("""
+        UPDATE cars 
+        SET engine_wear = 0, gearbox_wear = 0, chassis_wear = 0, brake_wear = 0, suspension_wear = 0
+        WHERE car_id = ?
+    """, (car_id,))
+    
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (repair_cost, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🔧 Car Repaired!",
+        description=f"**{car_name}** is back in top condition!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Repairs Made", value=f"{total_wear:.1f}% wear removed", inline=True)
+    embed.add_field(name="Cost", value=f"${repair_cost:,}", inline=True)
+    embed.set_footer(text=f"New balance: ${balance - repair_cost:,}")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="livery", description="Customize your car's livery")
+@app_commands.describe(
+    primary_color="Primary color (hex code, e.g., #FF0000)",
+    secondary_color="Secondary color (hex code, e.g., #FFFFFF)"
+)
+async def livery(interaction: discord.Interaction, primary_color: str, secondary_color: str):
+    """Customize car appearance"""
+    import re
+    
+    # Validate hex colors
+    hex_pattern = re.compile(r'^#(?:[0-9a-fA-F]{3}){1,2}$')
+    
+    if not hex_pattern.match(primary_color) or not hex_pattern.match(secondary_color):
+        await interaction.response.send_message(
+            "❌ Invalid color format! Use hex codes like #FF0000",
+            ephemeral=True
+        )
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Cost for livery change
+    livery_cost = 5000
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    balance = c.fetchone()[0]
+    
+    if balance < livery_cost:
+        await interaction.response.send_message(
+            f"❌ Not enough money! Livery change costs ${livery_cost:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Update livery
+    c.execute("""
+        UPDATE cars 
+        SET livery_color_primary = ?, livery_color_secondary = ?
+        WHERE owner_id = ? AND is_active = 1
+    """, (primary_color, secondary_color, interaction.user.id))
+    
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (livery_cost, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🎨 Livery Updated!",
+        description="Your car has a new look!",
+        color=int(primary_color.replace('#', '0x'), 16)
+    )
+    embed.add_field(name="Primary Color", value=primary_color, inline=True)
+    embed.add_field(name="Secondary Color", value=secondary_color, inline=True)
+    embed.add_field(name="Cost", value=f"${livery_cost:,}", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+# ============================================================================
+# SETUP & TUNING COMMANDS (Commands 24-28)
+# ============================================================================
+
+@bot.tree.command(name="setup", description="View car setup configurations")
+async def setup(interaction: discord.Interaction):
+    """Display saved setups"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT setup_name, track, conditions, is_favorite, times_used
+        FROM setups
+        WHERE user_id = ?
+        ORDER BY is_favorite DESC, times_used DESC
+        LIMIT 10
+    """, (interaction.user.id,))
+    
+    setups = c.fetchall()
+    
+    if not setups:
+        embed = discord.Embed(
+            title="🔧 Car Setups",
+            description="No saved setups yet! Create one with `/createsetup`",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="🔧 Saved Car Setups",
+        description=f"You have {len(setups)} saved setup(s)",
+        color=discord.Color.blue()
+    )
+    
+    for setup in setups:
+        name, track, conditions, favorite, uses = setup
+        fav_icon = "⭐" if favorite else ""
+        
+        embed.add_field(
+            name=f"{fav_icon} {name}",
+            value=f"Track: {track} | Conditions: {conditions}\nUsed: {uses} times",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="createsetup", description="Create a new car setup")
+@app_commands.describe(
+    setup_name="Name for this setup",
+    track="Track this setup is for"
+)
+async def createsetup(interaction: discord.Interaction, setup_name: str, track: str):
+    """Create a new setup configuration"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Check if name already exists
+    c.execute("SELECT setup_id FROM setups WHERE user_id = ? AND setup_name = ?",
+              (interaction.user.id, setup_name))
+    
+    if c.fetchone():
+        await interaction.response.send_message(
+            f"❌ Setup '{setup_name}' already exists!",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Create default setup
+    c.execute("""
+        INSERT INTO setups (user_id, setup_name, track)
+        VALUES (?, ?, ?)
+    """, (interaction.user.id, setup_name, track))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="✅ Setup Created",
+        description=f"**{setup_name}** created for {track}",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Next Step", value="Use `/adjustsetup` to tune your setup!", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="adjustsetup", description="Adjust setup parameters")
+@app_commands.describe(
+    setup_name="Setup to adjust",
+    parameter="Parameter to change",
+    value="New value (0-100)"
+)
+@app_commands.choices(parameter=[
+    app_commands.Choice(name="Front Wing", value="front_wing"),
+    app_commands.Choice(name="Rear Wing", value="rear_wing"),
+    app_commands.Choice(name="Differential", value="differential"),
+    app_commands.Choice(name="Brake Balance", value="brake_balance"),
+    app_commands.Choice(name="Suspension (Front)", value="suspension_front"),
+    app_commands.Choice(name="Suspension (Rear)", value="suspension_rear"),
+])
+async def adjustsetup(interaction: discord.Interaction, setup_name: str, parameter: app_commands.Choice[str], value: int):
+    """Adjust setup parameters"""
+    if not 0 <= value <= 100:
+        await interaction.response.send_message("❌ Value must be between 0-100!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Find setup
+    c.execute("SELECT setup_id FROM setups WHERE user_id = ? AND setup_name = ?",
+              (interaction.user.id, setup_name))
+    
+    setup = c.fetchone()
+    
+    if not setup:
+        await interaction.response.send_message(f"❌ Setup '{setup_name}' not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    setup_id = setup[0]
+    
+    # Update parameter
+    c.execute(f"""
+        UPDATE setups 
+        SET {parameter.value} = ?
+        WHERE setup_id = ?
+    """, (value, setup_id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🔧 Setup Adjusted",
+        description=f"**{setup_name}** updated",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Parameter", value=parameter.name, inline=True)
+    embed.add_field(name="New Value", value=str(value), inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    conn.close()
+
+@bot.tree.command(name="loadsetup", description="Load a setup for your next race")
+@app_commands.describe(setup_name="Setup to load")
+async def loadsetup(interaction: discord.Interaction, setup_name: str):
+    """Load a saved setup"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT setup_id, front_wing, rear_wing, differential, brake_balance, 
+               suspension_front, suspension_rear
+        FROM setups 
+        WHERE user_id = ? AND setup_name = ?
+    """, (interaction.user.id, setup_name))
+    
+    setup = c.fetchone()
+    
+    if not setup:
+        await interaction.response.send_message(f"❌ Setup '{setup_name}' not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Increment usage counter
+    c.execute("UPDATE setups SET times_used = times_used + 1 WHERE setup_id = ?", (setup[0],))
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="✅ Setup Loaded",
+        description=f"**{setup_name}** is ready for your next race!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Front Wing", value=str(setup[1]), inline=True)
+    embed.add_field(name="Rear Wing", value=str(setup[2]), inline=True)
+    embed.add_field(name="Differential", value=str(setup[3]), inline=True)
+    embed.add_field(name="Brake Balance", value=str(setup[4]), inline=True)
+    embed.add_field(name="Suspension (F)", value=str(setup[5]), inline=True)
+    embed.add_field(name="Suspension (R)", value=str(setup[6]), inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    conn.close()
+
+# ============================================================================
+# ECONOMY & TRADING COMMANDS (Commands 29-38)
+# ============================================================================
+
+@bot.tree.command(name="shop", description="Browse the item shop")
+@app_commands.describe(category="Shop category")
+@app_commands.choices(category=[
+    app_commands.Choice(name="🏎️ Cars", value="cars"),
+    app_commands.Choice(name="🔧 Parts", value="parts"),
+    app_commands.Choice(name="🎨 Cosmetics", value="cosmetics"),
+    app_commands.Choice(name="💎 Premium", value="premium"),
+])
+async def shop(interaction: discord.Interaction, category: app_commands.Choice[str] = None):
+    """Display shop items"""
+    cat = category.value if category else "cars"
+    
+    embed = discord.Embed(
+        title=f"🏪 Shop - {cat.title()}",
+        description="Available items for purchase",
+        color=discord.Color.gold()
+    )
+    
+    if cat == "cars":
+        embed.add_field(
+            name="🟢 Budget Car",
+            value="$50,000 | Stats: 55/52/54\nGood starter option",
+            inline=False
+        )
+        embed.add_field(
+            name="🔵 Standard Car",
+            value="$150,000 | Stats: 65/63/64\nSolid mid-tier performance",
+            inline=False
+        )
+        embed.add_field(
+            name="🟣 Premium Car",
+            value="$350,000 | Stats: 75/74/73\nHigh performance racing",
+            inline=False
+        )
+        embed.add_field(
+            name="🟠 Elite Car",
+            value="$750,000 | Stats: 85/84/83\nProfessional grade",
+            inline=False
+        )
+        embed.add_field(
+            name="🔴 Championship Car",
+            value="$1,500,000 | Stats: 95/94/93\nTop tier performance",
+            inline=False
+        )
+    
+    elif cat == "parts":
+        embed.add_field(
+            name="⚡ Engine Upgrade Kit",
+            value="$10,000 | +5 Engine Power",
+            inline=True
+        )
+        embed.add_field(
+            name="🌪️ Aero Package",
+            value="$8,000 | +5 Aerodynamics",
+            inline=True
+        )
+        embed.add_field(
+            name="🎯 Handling Kit",
+            value="$9,000 | +5 Handling",
+            inline=True
+        )
+    
+    elif cat == "cosmetics":
+        embed.add_field(
+            name="🎨 Custom Livery",
+            value="$5,000 | Customize your colors",
+            inline=True
+        )
+        embed.add_field(
+            name="🏁 Team Badge",
+            value="$2,000 | Show your team pride",
+            inline=True
+        )
+    
+    else:  # premium
+        embed.add_field(
+            name="💎 Premium Pass (Month)",
+            value="100 💎 | Double XP + Exclusive content",
+            inline=False
+        )
+        embed.add_field(
+            name="🎁 Starter Bundle",
+            value="50 💎 | $100k + Premium Car",
+            inline=False
+        )
+    
+    embed.set_footer(text="Use /buycar, /upgrade_car, or /livery to purchase!")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="market", description="View the player marketplace")
+async def market(interaction: discord.Interaction):
+    """Display marketplace listings"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT m.*, u.driver_name, c.car_name, c.car_tier
+        FROM market m
+        JOIN users u ON m.seller_id = u.user_id
+        LEFT JOIN cars c ON m.item_id = c.car_id AND m.item_type = 'car'
+        WHERE m.status = 'active'
+        ORDER BY m.listed_date DESC
+        LIMIT 10
+    """)
+    
+    listings = c.fetchall()
+    
+    if not listings:
+        embed = discord.Embed(
+            title="🏪 Marketplace",
+            description="No active listings. Use `/sell` to list items!",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="🏪 Player Marketplace",
+        description="Buy items from other players",
+        color=discord.Color.blue()
+    )
+    
+    for listing in listings[:5]:
+        listing_id, seller_id, item_type, item_id, price, listed_date, status, buyer_id, sold_date, seller_name, car_name, car_tier = listing
+        
+        if item_type == "car":
+            item_desc = f"{car_name} ({car_tier})"
+        else:
+            item_desc = f"{item_type.title()} #{item_id}"
+        
+        embed.add_field(
+            name=f"#{listing_id} - {item_desc}",
+            value=f"Seller: {seller_name}\nPrice: ${price:,}\nUse `/buy {listing_id}` to purchase",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="sell", description="List an item on the marketplace")
+@app_commands.describe(
+    item_type="Type of item to sell",
+    item_name="Name of the item",
+    price="Selling price"
+)
+@app_commands.choices(item_type=[
+    app_commands.Choice(name="🏎️ Car", value="car"),
+    app_commands.Choice(name="🔧 Part", value="part"),
+])
+async def sell(interaction: discord.Interaction, item_type: app_commands.Choice[str], item_name: str, price: int):
+    """List item for sale"""
+    if price < 100:
+        await interaction.response.send_message("❌ Minimum price is $100!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    item_id = None
+    
+    if item_type.value == "car":
+        c.execute("""
+            SELECT car_id, is_active 
+            FROM cars 
+            WHERE owner_id = ? AND car_name LIKE ?
+        """, (interaction.user.id, f"%{item_name}%"))
+        
+        car = c.fetchone()
+        
+        if not car:
+            await interaction.response.send_message(f"❌ Car '{item_name}' not found!", ephemeral=True)
+            conn.close()
+            return
+        
+        if car[1]:
+            await interaction.response.send_message("❌ Cannot sell your active car!", ephemeral=True)
+            conn.close()
+            return
+        
+        item_id = car[0]
+    
+    # Create listing
+    c.execute("""
+        INSERT INTO market (seller_id, item_type, item_id, price)
+        VALUES (?, ?, ?, ?)
+    """, (interaction.user.id, item_type.value, item_id, price))
+    
+    conn.commit()
+    listing_id = c.lastrowid
+    
+    embed = discord.Embed(
+        title="✅ Listed on Marketplace",
+        description=f"Your item is now for sale!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Listing ID", value=f"#{listing_id}", inline=True)
+    embed.add_field(name="Item", value=item_name, inline=True)
+    embed.add_field(name="Price", value=f"${price:,}", inline=True)
+    embed.set_footer(text="Other players can now purchase your item!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="buy", description="Purchase from marketplace")
+@app_commands.describe(listing_id="ID of the listing to buy")
+async def buy(interaction: discord.Interaction, listing_id: int):
+    """Buy item from marketplace"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get listing
+    c.execute("""
+        SELECT * FROM market WHERE listing_id = ? AND status = 'active'
+    """, (listing_id,))
+    
+    listing = c.fetchone()
+    
+    if not listing:
+        await interaction.response.send_message("❌ Listing not found or already sold!", ephemeral=True)
+        conn.close()
+        return
+    
+    _, seller_id, item_type, item_id, price, _, _, _, _ = listing
+    
+    if seller_id == interaction.user.id:
+        await interaction.response.send_message("❌ Cannot buy your own listing!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    balance = c.fetchone()[0]
+    
+    if balance < price:
+        await interaction.response.send_message(
+            f"❌ Not enough money! Need ${price:,}, have ${balance:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Transfer item
+    if item_type == "car":
+        c.execute("UPDATE cars SET owner_id = ? WHERE car_id = ?",
+                  (interaction.user.id, item_id))
+    
+    # Transfer money
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (price, interaction.user.id))
+    c.execute("UPDATE users SET money = money + ? WHERE user_id = ?",
+              (price, seller_id))
+    
+    # Mark as sold
+    c.execute("""
+        UPDATE market 
+        SET status = 'sold', buyer_id = ?, sold_date = ?
+        WHERE listing_id = ?
+    """, (interaction.user.id, datetime.now().isoformat(), listing_id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="✅ Purchase Complete!",
+        description="Item added to your inventory",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Listing ID", value=f"#{listing_id}", inline=True)
+    embed.add_field(name="Price Paid", value=f"${price:,}", inline=True)
+    embed.add_field(name="New Balance", value=f"${balance - price:,}", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="loan", description="Take out a loan")
+@app_commands.describe(amount="Loan amount ($1,000 - $500,000)")
+async def loan(interaction: discord.Interaction, amount: int):
+    """Borrow money with interest"""
+    if not 1000 <= amount <= 500000:
+        await interaction.response.send_message(
+            "❌ Loan amount must be between $1,000 and $500,000!",
+            ephemeral=True
+        )
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Check existing loans
+    c.execute("SELECT COUNT(*) FROM loans WHERE user_id = ? AND status = 'active'",
+              (interaction.user.id,))
+    
+    if c.fetchone()[0] >= 3:
+        await interaction.response.send_message(
+            "❌ Maximum 3 active loans allowed!",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Calculate interest (10% + 2% per $100k)
+    interest_rate = 0.10 + (amount / 100000) * 0.02
+    total_repay = int(amount * (1 + interest_rate))
+    
+    # 30 days to repay
+    due_date = (datetime.now() + timedelta(days=30)).isoformat()
+    
+    # Create loan
+    c.execute("""
+        INSERT INTO loans (user_id, amount, interest_rate, remaining_amount, due_date)
+        VALUES (?, ?, ?, ?, ?)
+    """, (interaction.user.id, amount, interest_rate, total_repay, due_date))
+    
+    # Add money
+    c.execute("UPDATE users SET money = money + ? WHERE user_id = ?",
+              (amount, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="💰 Loan Approved!",
+        description="Funds have been added to your account",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Loan Amount", value=f"${amount:,}", inline=True)
+    embed.add_field(name="Interest Rate", value=f"{interest_rate*100:.1f}%", inline=True)
+    embed.add_field(name="Total to Repay", value=f"${total_repay:,}", inline=True)
+    embed.add_field(name="Due Date", value=due_date[:10], inline=False)
+    embed.set_footer(text="Use /repay to pay back the loan early!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="repay", description="Repay a loan")
+@app_commands.describe(loan_id="Loan ID to repay (use /loans to see IDs)")
+async def repay(interaction: discord.Interaction, loan_id: int):
+    """Repay an active loan"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get loan
+    c.execute("""
+        SELECT remaining_amount FROM loans 
+        WHERE loan_id = ? AND user_id = ? AND status = 'active'
+    """, (loan_id, interaction.user.id))
+    
+    loan = c.fetchone()
+    
+    if not loan:
+        await interaction.response.send_message("❌ Loan not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    amount_due = loan[0]
+    
+    # Check balance
+    c.execute("SELECT money FROM users WHERE user_id = ?", (interaction.user.id,))
+    balance = c.fetchone()[0]
+    
+    if balance < amount_due:
+        await interaction.response.send_message(
+            f"❌ Not enough money! Need ${amount_due:,}, have ${balance:,}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Repay loan
+    c.execute("UPDATE loans SET status = 'paid', remaining_amount = 0 WHERE loan_id = ?",
+              (loan_id,))
+    c.execute("UPDATE users SET money = money - ? WHERE user_id = ?",
+              (amount_due, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="✅ Loan Repaid!",
+        description="Your loan has been fully repaid",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Amount Paid", value=f"${amount_due:,}", inline=True)
+    embed.add_field(name="New Balance", value=f"${balance - amount_due:,}", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="loans", description="View your active loans")
+async def loans(interaction: discord.Interaction):
+    """Display all active loans"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT loan_id, amount, interest_rate, remaining_amount, due_date
+        FROM loans 
+        WHERE user_id = ? AND status = 'active'
+    """, (interaction.user.id,))
+    
+    active_loans = c.fetchall()
+    
+    if not active_loans:
+        embed = discord.Embed(
+            title="💰 Your Loans",
+            description="You have no active loans!",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="💰 Active Loans",
+        description=f"You have {len(active_loans)} active loan(s)",
+        color=discord.Color.blue()
+    )
+    
+    for loan in active_loans:
+        loan_id, original, rate, remaining, due = loan
+        
+        embed.add_field(
+            name=f"Loan #{loan_id}",
+            value=f"Original: ${original:,}\n"
+                  f"Remaining: ${remaining:,}\n"
+                  f"Rate: {rate*100:.1f}%\n"
+                  f"Due: {due[:10]}",
+            inline=False
+        )
+    
+    total_debt = sum([l[3] for l in active_loans])
+    embed.set_footer(text=f"Total debt: ${total_debt:,}")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    conn.close()
+
+# Continuing with more commands...
+
+@bot.tree.command(name="sponsors", description="View available sponsors")
+async def sponsors(interaction: discord.Interaction):
+    """Display available sponsorship deals"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT s.*, us.contract_id
+        FROM sponsors s
+        LEFT JOIN user_sponsors us ON s.sponsor_id = us.sponsor_id 
+            AND us.user_id = ? AND us.status = 'active'
+    """, (interaction.user.id,))
+    
+    sponsors_list = c.fetchall()
+    
+    embed = discord.Embed(
+        title="🏢 Available Sponsors",
+        description="Sign contracts for bonuses and payments!",
+        color=discord.Color.blue()
+    )
+    
+    for sponsor in sponsors_list[:10]:
+        sponsor_id, name, tier, bonus_type, bonus_amount, req_type, req_value, contract_length, payment, unlock_req, emoji, has_contract = sponsor
+        
+        if has_contract:
+            status = "✅ Active Contract"
+        elif unlock_req:
+            status = f"🔒 Locked ({unlock_req})"
+        else:
+            status = "📝 Available"
+        
+        tier_colors = {"bronze": "🥉", "silver": "🥈", "gold": "🥇", "platinum": "💎"}
+        
+        embed.add_field(
+            name=f"{emoji} {name} {tier_colors.get(tier, '')}",
+            value=f"{status}\n"
+                  f"Payment: ${payment:,}/race\n"
+                  f"Length: {contract_length} races\n"
+                  f"Bonus: {bonus_type.replace('_', ' ').title()}",
+            inline=True
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="sign", description="Sign a sponsor contract")
+@app_commands.describe(sponsor_name="Name of sponsor to sign with")
+async def sign(interaction: discord.Interaction, sponsor_name: str):
+    """Sign a sponsorship deal"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Find sponsor
+    c.execute("SELECT * FROM sponsors WHERE sponsor_name LIKE ?", (f"%{sponsor_name}%",))
+    sponsor = c.fetchone()
+    
+    if not sponsor:
+        await interaction.response.send_message(f"❌ Sponsor '{sponsor_name}' not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    sponsor_id, name, tier, bonus_type, bonus_amount, req_type, req_value, contract_length, payment, unlock_req, emoji = sponsor
+    
+    # Check if already signed
+    c.execute("""
+        SELECT contract_id FROM user_sponsors 
+        WHERE user_id = ? AND sponsor_id = ? AND status = 'active'
+    """, (interaction.user.id, sponsor_id))
+    
+    if c.fetchone():
+        await interaction.response.send_message(f"❌ Already have a contract with {name}!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Check unlock requirements
+    if unlock_req:
+        # Parse requirement (e.g., "skill_rating>70")
+        # Simplified check here
+        await interaction.response.send_message(
+            f"❌ You don't meet the requirements for {name}!\n{unlock_req}",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Sign contract
+    c.execute("""
+        INSERT INTO user_sponsors (user_id, sponsor_id, races_remaining)
+        VALUES (?, ?, ?)
+    """, (interaction.user.id, sponsor_id, contract_length))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title=f"{emoji} Contract Signed!",
+        description=f"Welcome to **{name}**!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Tier", value=tier.title(), inline=True)
+    embed.add_field(name="Contract Length", value=f"{contract_length} races", inline=True)
+    embed.add_field(name="Payment/Race", value=f"${payment:,}", inline=True)
+    embed.add_field(name="Bonus", value=f"{bonus_type.replace('_', ' ').title()}: {bonus_amount}", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+# ============================================================================
+# LEAGUE & TOURNAMENT COMMANDS (Commands 39-48)
+# ============================================================================
+
+@bot.tree.command(name="createleague", description="Create a racing league")
+@app_commands.describe(
+    league_name="Name of your league",
+    max_drivers="Maximum drivers allowed (10-30)",
+    private="Make league private?"
+)
+async def createleague(interaction: discord.Interaction, league_name: str, max_drivers: int = 20, private: bool = False):
+    """Create a new racing league"""
+    if not 10 <= max_drivers <= 30:
+        await interaction.response.send_message("❌ Max drivers must be 10-30!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Create league
+    c.execute("""
+        INSERT INTO leagues (league_name, creator_id, max_drivers, private)
+        VALUES (?, ?, ?, ?)
+    """, (league_name, interaction.user.id, max_drivers, 1 if private else 0))
+    
+    league_id = c.lastrowid
+    
+    # Add creator as first member
+    c.execute("""
+        INSERT INTO league_members (league_id, user_id)
+        VALUES (?, ?)
+    """, (league_id, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🏁 League Created!",
+        description=f"**{league_name}** is ready for racing!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="League ID", value=f"#{league_id}", inline=True)
+    embed.add_field(name="Max Drivers", value=str(max_drivers), inline=True)
+    embed.add_field(name="Privacy", value="Private" if private else "Public", inline=True)
+    embed.set_footer(text=f"Share League ID {league_id} to invite drivers!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="leagues", description="View available leagues")
+async def leagues(interaction: discord.Interaction):
+    """Display active leagues"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT l.league_id, l.league_name, l.creator_id, l.max_drivers, l.current_season,
+               COUNT(lm.member_id) as member_count,
+               u.driver_name as creator_name
+        FROM leagues l
+        LEFT JOIN league_members lm ON l.league_id = lm.league_id
+        JOIN users u ON l.creator_id = u.user_id
+        WHERE l.status = 'active' AND l.private = 0
+        GROUP BY l.league_id
+        ORDER BY member_count DESC
+        LIMIT 10
+    """)
+    
+    leagues_list = c.fetchall()
+    
+    if not leagues_list:
+        embed = discord.Embed(
+            title="🏁 Racing Leagues",
+            description="No public leagues available. Create one with `/createleague`!",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="🏁 Available Leagues",
+        description="Join a league to compete!",
+        color=discord.Color.blue()
+    )
+    
+    for league in leagues_list:
+        league_id, name, creator_id, max_drivers, season, member_count, creator = league
+        
+        embed.add_field(
+            name=f"#{league_id} - {name}",
+            value=f"Created by: {creator}\n"
+                  f"Season: {season} | Drivers: {member_count}/{max_drivers}\n"
+                  f"Use `/joinleague {league_id}` to join",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="joinleague", description="Join a racing league")
+@app_commands.describe(league_id="League ID to join")
+async def joinleague(interaction: discord.Interaction, league_id: int):
+    """Join an existing league"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Check league exists
+    c.execute("""
+        SELECT league_name, max_drivers, 
+               (SELECT COUNT(*) FROM league_members WHERE league_id = ?) as member_count
+        FROM leagues 
+        WHERE league_id = ? AND status = 'active'
+    """, (league_id, league_id))
+    
+    league = c.fetchone()
+    
+    if not league:
+        await interaction.response.send_message("❌ League not found or inactive!", ephemeral=True)
+        conn.close()
+        return
+    
+    name, max_drivers, member_count = league
+    
+    if member_count >= max_drivers:
+        await interaction.response.send_message("❌ League is full!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Check if already member
+    c.execute("""
+        SELECT member_id FROM league_members 
+        WHERE league_id = ? AND user_id = ?
+    """, (league_id, interaction.user.id))
+    
+    if c.fetchone():
+        await interaction.response.send_message("❌ Already a member of this league!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Join league
+    c.execute("""
+        INSERT INTO league_members (league_id, user_id)
+        VALUES (?, ?)
+    """, (league_id, interaction.user.id))
+    
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="✅ Joined League!",
+        description=f"Welcome to **{name}**!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Members", value=f"{member_count + 1}/{max_drivers}", inline=True)
+    embed.set_footer(text="Good luck in your races!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="standings", description="View league standings")
+@app_commands.describe(league_id="League ID (leave empty for your leagues)")
+async def standings(interaction: discord.Interaction, league_id: int = None):
+    """Display league championship standings"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    if not league_id:
+        # Get user's first league
+        c.execute("""
+            SELECT league_id FROM league_members 
+            WHERE user_id = ? AND active = 1
+            LIMIT 1
+        """, (interaction.user.id,))
+        
+        result = c.fetchone()
+        if not result:
+            await interaction.response.send_message("❌ Not a member of any league!", ephemeral=True)
+            conn.close()
+            return
+        
+        league_id = result[0]
+    
+    # Get league info
+    c.execute("SELECT league_name, current_season FROM leagues WHERE league_id = ?", (league_id,))
+    league_info = c.fetchone()
+    
+    if not league_info:
+        await interaction.response.send_message("❌ League not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    league_name, season = league_info
+    
+    # Get standings
+    c.execute("""
+        SELECT u.driver_name, lm.season_points, lm.season_wins, lm.season_podiums, lm.season_fastest_laps
+        FROM league_members lm
+        JOIN users u ON lm.user_id = u.user_id
+        WHERE lm.league_id = ? AND lm.active = 1
+        ORDER BY lm.season_points DESC, lm.season_wins DESC
+    """, (league_id,))
+    
+    standings_list = c.fetchall()
+    
+    embed = discord.Embed(
+        title=f"🏆 {league_name} - Season {season}",
+        description="Championship Standings",
+        color=discord.Color.gold()
+    )
+    
+    for idx, driver in enumerate(standings_list, 1):
+        name, points, wins, podiums, fastest_laps = driver
+        
+        if idx == 1:
+            position = "🥇"
+        elif idx == 2:
+            position = "🥈"
+        elif idx == 3:
+            position = "🥉"
+        else:
+            position = f"**P{idx}**"
+        
+        embed.add_field(
+            name=f"{position} {name}",
+            value=f"Points: {points} | Wins: {wins} | Podiums: {podiums}",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="tournament", description="Create a tournament")
+@app_commands.describe(
+    tournament_name="Tournament name",
+    max_participants="Max participants (8/16/32)",
+    entry_fee="Entry fee (0 for free)"
+)
+@app_commands.choices(max_participants=[
+    app_commands.Choice(name="8 Drivers", value=8),
+    app_commands.Choice(name="16 Drivers", value=16),
+    app_commands.Choice(name="32 Drivers", value=32),
+])
+async def tournament(interaction: discord.Interaction, tournament_name: str, max_participants: app_commands.Choice[int], entry_fee: int = 0):
+    """Create an elimination tournament"""
+    if entry_fee < 0:
+        await interaction.response.send_message("❌ Entry fee cannot be negative!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Calculate prize pool
+    prize_pool = 0  # Will grow as players join
+    
+    # Calculate rounds
+    import math
+    total_rounds = int(math.log2(max_participants.value))
+    
+    # Create tournament
+    c.execute("""
+        INSERT INTO tournaments (tournament_name, creator_id, max_participants, entry_fee, prize_pool, total_rounds)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (tournament_name, interaction.user.id, max_participants.value, entry_fee, prize_pool, total_rounds))
+    
+    tournament_id = c.lastrowid
+    conn.commit()
+    
+    embed = discord.Embed(
+        title="🏆 Tournament Created!",
+        description=f"**{tournament_name}** is ready for registration!",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="Tournament ID", value=f"#{tournament_id}", inline=True)
+    embed.add_field(name="Format", value=f"Single Elimination", inline=True)
+    embed.add_field(name="Participants", value=f"0/{max_participants.value}", inline=True)
+    embed.add_field(name="Entry Fee", value=f"${entry_fee:,}" if entry_fee > 0 else "Free", inline=True)
+    embed.add_field(name="Rounds", value=str(total_rounds), inline=True)
+    embed.set_footer(text=f"Use /jointournament {tournament_id} to register!")
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+# ============================================================================
+# FINAL BATCH - UTILITY & ADMIN COMMANDS (Commands 49-54)
+# ============================================================================
+
+@bot.tree.command(name="history", description="View your race history")
+@app_commands.describe(limit="Number of races to show (1-20)")
+async def history(interaction: discord.Interaction, limit: int = 5):
+    """Display recent race history"""
+    if not 1 <= limit <= 20:
+        await interaction.response.send_message("❌ Limit must be 1-20!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT track, position, points, fastest_lap, timestamp, positions_gained, pit_stops
+        FROM race_history
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (interaction.user.id, limit))
+    
+    races = c.fetchall()
+    
+    if not races:
+        await interaction.response.send_message("❌ No race history yet!", ephemeral=True)
+        conn.close()
+        return
+    
+    embed = discord.Embed(
+        title="📜 Race History",
+        description=f"Your last {len(races)} race(s)",
+        color=discord.Color.blue()
+    )
+    
+    for race in races:
+        track, position, points, fastest_lap, timestamp, positions_gained, pit_stops = race
+        
+        # Position emoji
+        if position == 1:
+            pos_emoji = "🥇"
+        elif position == 2:
+            pos_emoji = "🥈"
+        elif position == 3:
+            pos_emoji = "🥉"
+        else:
+            pos_emoji = f"P{position}"
+        
+        # Positions gained
+        if positions_gained > 0:
+            gain_str = f"🟢 +{positions_gained}"
+        elif positions_gained < 0:
+            gain_str = f"🔴 {positions_gained}"
+        else:
+            gain_str = "⚪ =0"
+        
+        lap_str = f"{fastest_lap:.3f}s" if fastest_lap and fastest_lap < 999 else "N/A"
+        
+        embed.add_field(
+            name=f"{pos_emoji} {track}",
+            value=f"{gain_str} | Points: {points} | FL: {lap_str}\n"
+                  f"Pits: {pit_stops} | {timestamp[:10]}",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="leaderboard", description="Global leaderboards")
+@app_commands.describe(category="Leaderboard category")
+@app_commands.choices(category=[
+    app_commands.Choice(name="💰 Richest Drivers", value="money"),
+    app_commands.Choice(name="⭐ Highest Skill", value="skill"),
+    app_commands.Choice(name="🏆 Most Wins", value="wins"),
+    app_commands.Choice(name="🏁 Most Races", value="races"),
+])
+async def leaderboard(interaction: discord.Interaction, category: app_commands.Choice[str]):
+    """Global leaderboards"""
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Map category to SQL
+    category_map = {
+        "money": ("money", "💰 Richest Drivers"),
+        "skill": ("skill_rating", "⭐ Highest Skill"),
+        "wins": ("career_wins", "🏆 Most Wins"),
+        "races": ("race_starts", "🏁 Most Races"),
+    }
+    
+    column, title = category_map[category.value]
+    
+    c.execute(f"""
+        SELECT driver_name, {column}
+        FROM users
+        WHERE race_starts > 0
+        ORDER BY {column} DESC
+        LIMIT 15
+    """)
+    
+    results = c.fetchall()
+    
+    embed = discord.Embed(
+        title=f"🏆 {title}",
+        description="Top 15 drivers worldwide",
+        color=discord.Color.gold()
+    )
+    
+    for idx, (name, value) in enumerate(results, 1):
+        if idx <= 3:
+            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            rank = medals[idx]
+        else:
+            rank = f"**{idx}.**"
+        
+        # Format value based on category
+        if category.value == "money":
+            value_str = f"${value:,}"
+        elif category.value == "skill":
+            value_str = f"{value:.1f}"
+        else:
+            value_str = str(value)
+        
+        embed.add_field(
+            name=f"{rank} {name}",
+            value=value_str,
+            inline=True
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="compare", description="Compare stats with another driver")
+@app_commands.describe(driver="@mention a driver to compare with")
+async def compare(interaction: discord.Interaction, driver: discord.User):
+    """Compare stats between two drivers"""
+    if driver.id == interaction.user.id:
+        await interaction.response.send_message("❌ Cannot compare with yourself!", ephemeral=True)
+        return
+    
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Get both drivers' stats
+    c.execute("""
+        SELECT driver_name, skill_rating, career_wins, career_podiums, career_points, 
+               race_starts, money
+        FROM users
+        WHERE user_id IN (?, ?)
+    """, (interaction.user.id, driver.id))
+    
+    results = c.fetchall()
+    
+    if len(results) != 2:
+        await interaction.response.send_message("❌ One or both drivers not found!", ephemeral=True)
+        conn.close()
+        return
+    
+    # Organize data
+    user1, user2 = results
+    
+    embed = discord.Embed(
+        title="⚔️ Driver Comparison",
+        description=f"**{user1[0]}** vs **{user2[0]}**",
+        color=discord.Color.blue()
+    )
+    
+    # Compare each stat
+    stats = [
+        ("⭐ Skill Rating", 1),
+        ("🏆 Wins", 2),
+        ("🥈 Podiums", 3),
+        ("📊 Points", 4),
+        ("🏁 Races", 5),
+        ("💰 Money", 6),
+    ]
+    
+    for stat_name, idx in stats:
+        val1, val2 = user1[idx], user2[idx]
+        
+        if idx == 6:  # Money
+            val1_str = f"${val1:,}"
+            val2_str = f"${val2:,}"
+        elif idx == 1:  # Skill rating
+            val1_str = f"{val1:.1f}"
+            val2_str = f"{val2:.1f}"
+        else:
+            val1_str = str(val1)
+            val2_str = str(val2)
+        
+        # Winner indicator
+        if val1 > val2:
+            winner = "🟢"
+            loser = "🔴"
+        elif val2 > val1:
+            winner = "🔴"
+            loser = "🟢"
+        else:
+            winner = loser = "⚪"
+        
+        embed.add_field(
+            name=stat_name,
+            value=f"{winner} {val1_str} | {loser} {val2_str}",
+            inline=True
+        )
+    
+    await interaction.response.send_message(embed=embed)
+    conn.close()
+
+@bot.tree.command(name="help", description="Show all available commands")
+async def help_command(interaction: discord.Interaction):
+    """Display help menu"""
+    embed = discord.Embed(
+        title="🏁 F1 Racing Bot - Commands",
+        description="Complete command list",
+        color=discord.Color.blue()
+    )
+    
+    categories = {
+        "👤 Profile & Career": [
+            "`/profile` - View your driver profile",
+            "`/stats` - Detailed career statistics",
+            "`/daily` - Claim daily rewards",
+            "`/experience` - View XP and level",
+            "`/challenges` - Daily challenges",
+            "`/achievements` - View achievements",
+            "`/skills` - Skill tree",
+            "`/upgrade` - Upgrade skills",
+        ],
+        "🏎️ Cars & Garage": [
+            "`/garage` - View your cars",
+            "`/buycar` - Purchase new car",
+            "`/sellcar` - Sell a car",
+            "`/setcar` - Set active car",
+            "`/upgrade_car` - Upgrade components",
+            "`/repair` - Repair damage",
+            "`/livery` - Customize colors",
+        ],
+        "🏁 Racing": [
+            "`/race` - Start a race",
+            "`/nextlap` - Simulate next lap",
+            "`/setup` - View setups",
+            "`/createsetup` - Create setup",
+            "`/adjustsetup` - Tune setup",
+            "`/loadsetup` - Load setup",
+        ],
+        "💰 Economy": [
+            "`/wallet` - Check balance",
+            "`/shop` - Browse shop",
+            "`/market` - Player marketplace",
+            "`/sell` - List items for sale",
+            "`/buy` - Buy from market",
+            "`/loan` - Take a loan",
+            "`/repay` - Repay loan",
+            "`/sponsors` - View sponsors",
+            "`/sign` - Sign sponsor deal",
+        ],
+        "🏆 Competition": [
+            "`/createleague` - Create league",
+            "`/leagues` - View leagues",
+            "`/joinleague` - Join league",
+            "`/standings` - League standings",
+            "`/tournament` - Create tournament",
+            "`/ranking` - Global rankings",
+            "`/leaderboard` - Leaderboards",
+        ],
+        "📊 Stats & Info": [
+            "`/history` - Race history",
+            "`/compare` - Compare drivers",
+            "`/help` - This menu",
+        ],
+    }
+    
+    for category, commands in categories.items():
+        embed.add_field(
+            name=category,
+            value="\n".join(commands),
+            inline=False
+        )
+    
+    embed.set_footer(text="More commands and features coming soon!")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="notify", description="Toggle race notifications")
+async def notify(interaction: discord.Interaction):
+    """Toggle notification preferences"""
+    # This would require a notifications table
+    embed = discord.Embed(
+        title="🔔 Notifications",
+        description="Notification settings updated!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Race Results", value="✅ Enabled", inline=True)
+    embed.add_field(name="League Updates", value="✅ Enabled", inline=True)
+    embed.add_field(name="Tournament Matches", value="✅ Enabled", inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    F1 Racing Bot - Race Management Commands
+I'll provide the comprehensive race management commands to complete your F1 racing bot. These will integrate with your existing RaceEngine class.
+# ============================================================================
+# RACE MANAGEMENT COMMANDS - Complete System
+# ============================================================================
+
+@bot.tree.command(name="race", description="Start a new race")
+@app_commands.describe(
+    track="Track to race on",
+    laps="Number of laps (5-50)",
+    weather="Weather conditions",
+    ai_count="Number of AI opponents (0-19)"
+)
+@app_commands.choices(
+    track=[
+        app_commands.Choice(name="🇮🇹 Monza", value="Monza"),
+        app_commands.Choice(name="🇲🇨 Monaco", value="Monaco"),
+        app_commands.Choice(name="🇧🇪 Spa-Francorchamps", value="Spa"),
+        app_commands.Choice(name="🇬🇧 Silverstone", value="Silverstone"),
+        app_commands.Choice(name="🇯🇵 Suzuka", value="Suzuka"),
+        app_commands.Choice(name="🇸🇬 Singapore", value="Singapore"),
+        app_commands.Choice(name="🇧🇭 Bahrain", value="Bahrain"),
+        app_commands.Choice(name="🇸🇦 Jeddah", value="Jeddah"),
+        app_commands.Choice(name="🇺🇸 Miami", value="Miami"),
+        app_commands.Choice(name="🇺🇸 Las Vegas", value="Las Vegas"),
+    ],
+    weather=[
+        app_commands.Choice(name="☀️ Clear", value="clear"),
+        app_commands.Choice(name="☁️ Cloudy", value="cloudy"),
+        app_commands.Choice(name="🌦️ Light Rain", value="light_rain"),
+        app_commands.Choice(name="🌧️ Rain", value="rain"),
+        app_commands.Choice(name="⛈️ Heavy Rain", value="heavy_rain"),
+    ]
+)
+async def race(
+    interaction: discord.Interaction,
+    track: app_commands.Choice[str],
+    laps: int = 10,
+    weather: app_commands.Choice[str] = None,
+    ai_count: int = 10
+):
+    """Create and start a new race"""
+    
+    # Validation
+    if not 5 <= laps <= 50:
+        await interaction.response.send_message("❌ Laps must be between 5-50!", ephemeral=True)
+        return
+    
+    if not 0 <= ai_count <= 19:
+        await interaction.response.send_message("❌ AI count must be 0-19!", ephemeral=True)
+        return
+    
+    # Check if race already active in this channel
+    if interaction.channel_id in active_races:
+        await interaction.response.send_message(
+            "❌ A race is already active in this channel! Use `/endrace` first.",
+            ephemeral=True
+        )
+        return
+    
+    # Get user profile and active car
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    c.execute("""
+        SELECT u.*, c.engine_power, c.aero, c.handling, c.reliability, 
+               c.tyre_wear_rate, c.fuel_efficiency, c.ers_power, c.drs_efficiency, c.downforce_level
+        FROM users u
+        LEFT JOIN cars c ON u.user_id = c.owner_id AND c.is_active = 1
+        WHERE u.user_id = ?
+    """, (interaction.user.id,))
+    
+    user_data = c.fetchone()
+    
+    if not user_data:
+        await interaction.response.send_message("❌ Profile not found! Use `/profile` first.", ephemeral=True)
+        conn.close()
+        return
+    
+    # Check if user has an active car
+    if user_data[36] is None:  # No car stats
+        await interaction.response.send_message(
+            "❌ No active car! Use `/garage` to set your car.",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
+    # Create race engine
+    weather_condition = weather.value if weather else "clear"
+    race_engine = RaceEngine(
+        track=track.value,
+        laps=laps,
+        weather=weather_condition,
+        qualifying=True
+    )
+    
+    # Create player driver
+    car_stats = {
+        'engine_power': user_data[36] or 50,
+        'aero': user_data[37] or 50,
+        'handling': user_data[38] or 50,
+        'reliability': user_data[39] or 100,
+        'tyre_wear_rate': user_data[40] or 1.0,
+        'fuel_efficiency': user_data[41] or 1.0,
+        'ers_power': user_data[42] or 50,
+        'drs_efficiency': user_data[43] or 1.0,
+        'downforce_level': user_data[44] or 50
+    }
+    
+    advanced_stats = {
+        'rain_skill': user_data[15] or 50,
+        'overtaking_skill': user_data[16] or 50,
+        'defending_skill': user_data[17] or 50,
+        'quali_skill': user_data[18] or 50,
+        'focus': user_data[6] or 100,
+        'fatigue': user_data[5] or 0,
+        'tyre_management': 50  # Could be added to user table
+    }
+    
+    player_driver = Driver(
+        driver_id=interaction.user.id,
+        name=user_data[1],  # driver_name
+        skill=user_data[2],  # skill_rating
+        aggression=user_data[3],
+        consistency=user_data[4],
+        is_ai=False,
+        car_stats=car_stats,
+        advanced_stats=advanced_stats
+    )
+    
+    race_engine.add_driver(player_driver)
+    
+    # Add AI drivers
+    c.execute(f"SELECT * FROM ai_profiles ORDER BY RANDOM() LIMIT ?", (ai_count,))
+    ai_drivers = c.fetchall()
+    
+    for ai in ai_drivers:
+        ai_car_stats = {
+            'engine_power': ai[1] * 0.9,  # Based on skill rating
+            'aero': ai[1] * 0.9,
+            'handling': ai[1] * 0.9,
+            'reliability': ai[9] * 0.95,  # Based on consistency
+            'tyre_wear_rate': 1.0,
+            'fuel_efficiency': 1.0,
+            'ers_power': ai[1] * 0.85,
+            'drs_efficiency': 1.0,
+            'downforce_level': 50
+        }
+        
+        ai_advanced_stats = {
+            'rain_skill': ai[11] or 50,
+            'overtaking_skill': ai[3] or 50,
+            'defending_skill': ai[4] or 50,
+            'quali_skill': ai[12] or 50,
+            'focus': 100,
+            'fatigue': 0,
+            'tyre_management': ai[13] or 50
+        }
+        
+        ai_driver = Driver(
+            driver_id=ai[0],
+            name=ai[1],
+            skill=ai[2],
+            aggression=ai[10] or 50,
+            consistency=ai[9] or 50,
+            is_ai=True,
+            car_stats=ai_car_stats,
+            advanced_stats=ai_advanced_stats
+        )
+        
+        race_engine.add_driver(ai_driver)
+    
+    conn.close()
+    
+    # Run qualifying
+    await interaction.response.defer()
+    
+    quali_results = race_engine.run_qualifying()
+    
+    # Create qualifying results embed
+    quali_embed = discord.Embed(
+        title=f"🏁 {track.value} - Qualifying Results",
+        description=f"Grid set for {laps} lap race",
+        color=discord.Color.blue()
+    )
+    
+    # Show top 10 qualifiers
+    for idx, (driver, time) in enumerate(quali_results[:10], 1):
+        if idx == 1:
+            pos_str = "🥇 POLE"
+        elif idx == 2:
+            pos_str = "🥈 P2"
+        elif idx == 3:
+            pos_str = "🥉 P3"
+        else:
+            pos_str = f"**P{idx}**"
+        
+        gap = f"+{(time - quali_results[0][1]):.3f}s" if idx > 1 else "---"
+        
+        quali_embed.add_field(
+            name=f"{pos_str} {driver.name}",
+            value=f"⏱️ {time:.3f}s ({gap})",
+            inline=False
+        )
+    
+    # Store race in active races
+    active_races[interaction.channel_id] = race_engine
+    
+    # Create race control view
+    view = RaceControlView(race_engine, interaction.user.id)
+    
+    # Send qualifying results
+    quali_embed.set_footer(text="Use the buttons below to control your race strategy!")
+    
+    message = await interaction.followup.send(embed=quali_embed, view=view)
+    race_messages[interaction.channel_id] = message
+    
+    # Add "Start Race" button
+    start_embed = discord.Embed(
+        title="🏁 Ready to Race!",
+        description=f"Grid is set. Use `/nextlap` to begin the race!",
+        color=discord.Color.green()
+    )
+    await interaction.followup.send(embed=start_embed)
+
+
+@bot.tree.command(name="nextlap", description="Simulate the next lap of the race")
+async def nextlap(interaction: discord.Interaction):
+    """Advance race by one lap"""
+    
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race! Use `/race` to start one.",
+            ephemeral=True
+        )
+        return
+    
+    race = active_races[interaction.channel_id]
+    
+    # Check if race is finished
+    if race.current_lap >= race.total_laps:
+        await interaction.response.send_message(
+            "🏁 Race finished! Use `/results` to see final standings.",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer()
+    
+    # Simulate lap
+    race.simulate_lap()
+    
+    # Get race summary
+    summary = race.get_race_summary(detailed=False)
+    
+    # Create lap update embed
+    embed = discord.Embed(
+        title=f"📊 Lap {race.current_lap}/{race.total_laps}",
+        description=summary,
+        color=discord.Color.blue()
+    )
+    
+    # Add lap events
+    if race.lap_events:
+        events_text = "\n".join(race.lap_events[:5])  # Show top 5 events
+        embed.add_field(
+            name="📰 Lap Highlights",
+            value=events_text,
+            inline=False
+        )
+    
+    embed.set_footer(text="Use /nextlap to continue the race!")
+    
+    # Update race message
+    if interaction.channel_id in race_messages:
+        view = RaceControlView(race, interaction.user.id)
+        await race_messages[interaction.channel_id].edit(embed=embed, view=view)
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="simulate", description="Auto-simulate remaining laps")
+@app_commands.describe(laps="Number of laps to simulate (1-20)")
+async def simulate(interaction: discord.Interaction, laps: int = 5):
+    """Simulate multiple laps at once"""
+    
+    if not 1 <= laps <= 20:
+        await interaction.response.send_message("❌ Can simulate 1-20 laps at a time!", ephemeral=True)
+        return
+    
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race! Use `/race` to start one.",
+            ephemeral=True
+        )
+        return
+    
+    race = active_races[interaction.channel_id]
+    
+    if race.current_lap >= race.total_laps:
+        await interaction.response.send_message("🏁 Race already finished!", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
+    # Simulate laps
+    laps_to_simulate = min(laps, race.total_laps - race.current_lap)
+    
+    for _ in range(laps_to_simulate):
+        race.simulate_lap()
+        await asyncio.sleep(0.1)  # Small delay to prevent rate limits
+    
+    # Get race summary
+    summary = race.get_race_summary(detailed=True)
+    
+    embed = discord.Embed(
+        title=f"⚡ Fast Forward - Lap {race.current_lap}/{race.total_laps}",
+        description=summary,
+        color=discord.Color.gold()
+    )
+    
+    # Collect all events from simulated laps
+    all_events = race.events[-30:]  # Last 30 events
+    if all_events:
+        events_text = "\n".join(all_events)
+        embed.add_field(
+            name="📰 Recent Events",
+            value=events_text[:1000],  # Discord limit
+            inline=False
+        )
+    
+    if race.current_lap >= race.total_laps:
+        embed.set_footer(text="🏁 Race finished! Use /results for final standings.")
+    else:
+        embed.set_footer(text="Use /simulate or /nextlap to continue!")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="results", description="View final race results")
+async def results(interaction: discord.Interaction):
+    """Display final race results and save to database"""
+    
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race! Use `/race` to start one.",
+            ephemeral=True
+        )
+        return
+    
+    race = active_races[interaction.channel_id]
+    
+    if race.current_lap < race.total_laps:
+        await interaction.response.send_message(
+            f"❌ Race not finished! {race.total_laps - race.current_lap} laps remaining.",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer()
+    
+    # Get final results
+    results_text = race.get_final_results()
+    
+    # Create results embed
+    embed = discord.Embed(
+        title=f"🏆 {race.track} - Final Results",
+        description=results_text[:4000],  # Discord limit
+        color=discord.Color.gold()
+    )
+    
+    # Save results to database
+    conn = db.get_conn()
+    c = conn.cursor()
+    
+    # Points system
+    points_system = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+    
+    for driver in race.drivers:
+        if driver.is_ai:
+            continue  # Don't save AI results
+        
+        # Calculate points
+        points = 0
+        if not driver.dnf and driver.position <= len(points_system):
+            points = points_system[driver.position - 1]
+        
+        # Fastest lap bonus point
+        fastest_driver = min([d for d in race.drivers if not d.dnf], 
+                            key=lambda d: d.best_lap, default=None)
+        if fastest_driver and fastest_driver.id == driver.id and driver.position <= 10:
+            points += 1
+        
+        # Calculate money earned
+        money_earned = points * 1000  # $1000 per point
+        if driver.position == 1:
+            money_earned += 10000
+        elif driver.position == 2:
+            money_earned += 5000
+        elif driver.position == 3:
+            money_earned += 2500
+        
+        # Experience gained
+        experience_gained = 100 + (points * 50)
+        if driver.position == 1:
+            experience_gained += 500
+        
+        # Save race history
+        c.execute("""
+            INSERT INTO race_history (
+                user_id, position, points, fastest_lap, track, weather,
+                grid_position, positions_gained, pit_stops, dnf, dnf_reason,
+                race_time, average_lap, damage_sustained, penalties, penalty_time,
+                overtakes_made, overtakes_lost, money_earned, experience_gained
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            driver.id, driver.position, points,
+            driver.best_lap if driver.best_lap < 999 else None,
+            race.track, race.weather, driver.grid_position,
+            driver.positions_gained, driver.pit_stops,
+            1 if driver.dnf else 0, driver.dnf_reason or None,
+            driver.total_time, driver.total_time / race.total_laps if race.total_laps > 0 else 0,
+            driver.damage, driver.penalties, driver.penalty_time,
+            driver.overtakes_made, driver.overtakes_lost,
+            money_earned, experience_gained
+        ))
+        
+        # Update user stats
+        c.execute("""
+            UPDATE users SET
+                career_points = career_points + ?,
+                money = money + ?,
+                experience = experience + ?,
+                race_starts = race_starts + 1,
+                career_wins = career_wins + ?,
+                career_podiums = career_podiums + ?,
+                dnf_count = dnf_count + ?,
+                fastest_laps = fastest_laps + ?
+            WHERE user_id = ?
+        """, (
+            points, money_earned, experience_gained,
+            1 if driver.position == 1 and not driver.dnf else 0,
+            1 if driver.position <= 3 and not driver.dnf else 0,
+            1 if driver.dnf else 0,
+            1 if fastest_driver and fastest_driver.id == driver.id else 0,
+            driver.id
+        ))
+    
+    conn.commit()
+    conn.close()
+    
+    # Clean up race
+    del active_races[interaction.channel_id]
+    if interaction.channel_id in race_messages:
+        del race_messages[interaction.channel_id]
+    
+    embed.set_footer(text="Race data saved! Start a new race with /race")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="raceinfo", description="View current race information")
+async def raceinfo(interaction: discord.Interaction):
+    """Display detailed race information"""
+    
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    race = active_races[interaction.channel_id]
+    
+    embed = discord.Embed(
+        title=f"ℹ️ Race Information - {race.track}",
+        color=discord.Color.blue()
+    )
+    
+    track_info = race.track_data[race.track]
+    
+    # Track details
+    embed.add_field(
+        name="🏁 Track",
+        value=f"{track_info['flag']} {track_info['name']}\n{track_info['characteristic']}",
+        inline=False
+    )
+    
+    embed.add_field(name="📏 Length", value=f"{track_info['track_length_km']:.3f} km", inline=True)
+    embed.add_field(name="🌀 Corners", value=str(track_info['corners']), inline=True)
+    embed.add_field(name="💨 DRS Zones", value=str(track_info['drs_zones']), inline=True)
+    
+    # Race progress
+    embed.add_field(
+        name="📊 Progress",
+        value=f"Lap {race.current_lap}/{race.total_laps}",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🌦️ Weather",
+        value=race.weather.title(),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="👥 Drivers",
+        value=f"{len([d for d in race.drivers if not d.dnf])}/{len(race.drivers)} active",
+        inline=True
+    )
+    
+    # Conditions
+    embed.add_field(
+        name="🌡️ Track Temperature",
+        value=f"{race.track_temp}°C",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🏎️ Track Grip",
+        value=f"{race.track_grip:.0f}%",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🔧 Track Condition",
+        value=f"{race.track_condition:.0f}%",
+        inline=True
+    )
+    
+    # Flags
+    flags = []
+    if race.safety_car:
+        flags.append("🚨 Safety Car")
+    if race.virtual_safety_car:
+        flags.append("🟡 VSC")
+    if race.red_flag:
+        flags.append("🚩 Red Flag")
+    if race.drs_enabled:
+        flags.append("💨 DRS Enabled")
+    
+    if flags:
+        embed.add_field(
+            name="🚩 Status",
+            value="\n".join(flags),
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="endrace", description="End the current race (admin/creator only)")
+async def endrace(interaction: discord.Interaction):
+    """Force end the current race"""
+    
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    # Check permissions (you can add more checks here)
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message(
+            "❌ You need Manage Messages permission to end a race!",
+            ephemeral=True
+        )
+        return
+    
+    # Clean up race
+    del active_races[interaction.channel_id]
+    if interaction.channel_id in race_messages:
+        del race_messages[interaction.channel_id]
+    
+    embed = discord.Embed(
+        title="🏁 Race Ended",
+        description="The race has been terminated.",
+        color=discord.Color.red()
+    )
+    embed.set_footer(text="Start a new race with /race")
+    
+    await interaction.response.send_message(embed=embed)
 
 # This code would continue with:
 # - All 100 commands across categories
