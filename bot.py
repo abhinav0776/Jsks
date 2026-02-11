@@ -5327,9 +5327,6 @@ async def notify(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-I'll add 15 comprehensive race-related commands to your F1 bot. Add these commands to your code:
-
-```python
 # ============================================================================
 # RACING COMMANDS - CORE GAMEPLAY (15 Commands)
 # ============================================================================
@@ -6449,29 +6446,7 @@ async def racecalendar(interaction: discord.Interaction):
         embed.description = "Not in any leagues! Use `/leagues` to join one."
     
     conn.close()
-    await interaction.response.send_message(embed=embed)
-```
-
-These 15 commands provide comprehensive racing functionality:
-
-1. **`/race`** - Full race with customizable settings
-2. **`/quickrace`** - Quick start with random settings  
-3. **`/nextlap`** - Progress race lap-by-lap
-4. **`/raceresults`** - Final results + rewards
-5. **`/storace`** - Stop/forfeit race
-6. **`/garage`** - View car collection
-7. **`/wallet`** - Check finances
-8. **`/tracks`** - List all circuits
-9. **`/qualifying`** - Practice qualifying
-10. **`/practice`** - Practice laps
-11. **`/racestatus`** - Live race info
-12. **`/pitstrategy`** - AI strategy advice
-13. **`/weatherforecast`** - Weather predictions
-14. **`/rivalry`** - View rivalries
-15. **`/autolap`** - Auto-simulate laps
-
-Add these to your code right after the existing commands section. They integrate fully with your database, race engine, and UI button system!            
-    
+    await interaction.response.send_message(embed=embed)    
     
     
 
