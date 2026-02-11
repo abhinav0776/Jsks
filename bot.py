@@ -6920,7 +6920,7 @@ async def leaverace(interaction: discord.Interaction):
 # Replace your existing /startrace with this version
 # ============================================================
 
-@bot.tree.command(name="startrace", description="Start the multiplayer race (host only)")
+@bot.tree.command(name="racestart", description="Start the multiplayer race (host only)")
 async def startrace(interaction: discord.Interaction):
 
     # Check lobby exists
