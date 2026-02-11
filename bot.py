@@ -13,7 +13,66 @@ import logging
 intents = discord.Intents.default()
 intents.message_content = True  # Required for prefix commands
 bot = commands.Bot(command_prefix='+', intents=intents)
+# At the top of your file, add this to global storage section:
+race_lobbies: Dict[int, Dict] = {}
 
+# Then add this command to clear and reset everything:
+
+@bot.tree.command(name="clearraces", description="Clear all race data (admin only)")
+async def clearraces(interaction: discord.Interaction):
+    """Force clear all races and lobbies"""
+    
+    # Check if user has admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "❌ You need administrator permissions to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    # Clear all race data
+    active_races.clear()
+    race_lobbies.clear()
+    race_messages.clear()
+    
+    await interaction.response.send_message(
+        "✅ All race data cleared! You can now create new races.",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="debugrace", description="Show current race status")
+async def debugrace(interaction: discord.Interaction):
+    """Debug command to see race state"""
+    
+    embed = discord.Embed(
+        title="🔧 Race Debug Info",
+        color=discord.Color.blue()
+    )
+    
+    # Check lobby
+    if interaction.channel_id in race_lobbies:
+        lobby = race_lobbies[interaction.channel_id]
+        embed.add_field(
+            name="Lobby Status",
+            value=f"Players: {len(lobby['players'])}\nStarted: {lobby['started']}\nTrack: {lobby['track']}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="Lobby Status", value="No lobby in this channel", inline=False)
+    
+    # Check active race
+    if interaction.channel_id in active_races:
+        race = active_races[interaction.channel_id]
+        embed.add_field(
+            name="Active Race",
+            value=f"Lap: {race.current_lap}/{race.total_laps}\nDrivers: {len(race.drivers)}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="Active Race", value="No active race", inline=False)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 # ✅ This MUST come before any class definitions
 logging.basicConfig(
     level=logging.INFO,
