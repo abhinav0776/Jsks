@@ -5367,14 +5367,10 @@ async def createrace(
     
     embed.set_footer(text=f"Created by {interaction.user.display_name}")
     
-    await interaction.response.send_message(embed=embed)
-
-
 @bot.tree.command(name="joinrace", description="Join an active race lobby")
 async def joinrace(interaction: discord.Interaction):
     """Join the race lobby in the current channel"""
     
-    # Check if lobby exists
     if interaction.channel_id not in race_lobbies:
         await interaction.response.send_message(
             "❌ No race lobby in this channel! Use `/createrace` to create one.",
@@ -5384,7 +5380,6 @@ async def joinrace(interaction: discord.Interaction):
     
     lobby = race_lobbies[interaction.channel_id]
     
-    # Check if race already started
     if lobby['started']:
         await interaction.response.send_message(
             "❌ Race already started! Wait for the next one.",
@@ -5392,7 +5387,6 @@ async def joinrace(interaction: discord.Interaction):
         )
         return
     
-    # Check if already joined
     if interaction.user.id in lobby['players']:
         await interaction.response.send_message(
             "❌ You've already joined this race!",
@@ -5400,7 +5394,6 @@ async def joinrace(interaction: discord.Interaction):
         )
         return
     
-    # Check if lobby is full
     if len(lobby['players']) >= lobby['max_players']:
         await interaction.response.send_message(
             "❌ Race lobby is full!",
@@ -5408,40 +5401,35 @@ async def joinrace(interaction: discord.Interaction):
         )
         return
     
-    # Check if user has profile and car
     conn = db.get_conn()
     c = conn.cursor()
     
     c.execute("""
-        SELECT u.user_id, u.driver_name
+        SELECT u.user_id, u.driver_name, c.car_id
         FROM users u
         LEFT JOIN cars c ON u.user_id = c.owner_id AND c.is_active = 1
         WHERE u.user_id = ?
     """, (interaction.user.id,))
     
     user = c.fetchone()
-    conn.close()
     
     if not user:
         await interaction.response.send_message(
             "❌ Profile not found! Use `/profile` to create one first.",
             ephemeral=True
         )
+        conn.close()
         return
     
-    # Add player to lobby
+    if not user[2]:
+        await interaction.response.send_message(
+            "❌ No active car! Use `/garage` to set your car.",
+            ephemeral=True
+        )
+        conn.close()
+        return
+    
     lobby['players'].append(interaction.user.id)
-    
-    # Update lobby message
-    embed = discord.Embed(
-        title="🏁 Race Lobby",
-        description=f"**{lobby['track']}** - {lobby['laps']} Laps",
-        color=discord.Color.blue()
-    )
-    
-    # Get player names
-    conn = db.get_conn()
-    c = conn.cursor()
     
     player_names = []
     for player_id in lobby['players']:
@@ -5452,11 +5440,17 @@ async def joinrace(interaction: discord.Interaction):
     
     conn.close()
     
+    embed = discord.Embed(
+        title="🏁 Race Lobby",
+        description=f"**{lobby['track']}** - {lobby['laps']} Laps",
+        color=discord.Color.blue()
+    )
+    
     players_text = "\n".join([f"{i+1}. {name}" for i, name in enumerate(player_names)])
     
     embed.add_field(
         name=f"👥 Players ({len(lobby['players'])}/{lobby['max_players']})",
-        value=players_text or "No players yet",
+        value=players_text,
         inline=False
     )
     
@@ -5481,8 +5475,6 @@ async def joinrace(interaction: discord.Interaction):
         f"✅ **{interaction.user.display_name}** joined the race!",
         embed=embed
     )
-
-
 @bot.tree.command(name="startrace", description="Start the race (creator only)")
 async def startrace(interaction: discord.Interaction):
     """Start the race with all joined players"""
@@ -5537,7 +5529,9 @@ async def startrace(interaction: discord.Interaction):
     
     for player_id in lobby['players']:
         c.execute("""
-            SELECT u.*, c.engine_power, c.aero, c.handling, c.reliability, 
+            SELECT u.user_id, u.driver_name, u.skill_rating, u.aggression, u.consistency,
+                   u.fatigue, u.focus, u.rain_skill, u.overtaking_skill, u.defending_skill, u.quali_skill,
+                   c.engine_power, c.aero, c.handling, c.reliability, 
                    c.tyre_wear_rate, c.fuel_efficiency, c.ers_power, c.drs_efficiency, c.downforce_level
             FROM users u
             LEFT JOIN cars c ON u.user_id = c.owner_id AND c.is_active = 1
@@ -5549,35 +5543,35 @@ async def startrace(interaction: discord.Interaction):
         if not user_data:
             continue
         
-        # Create car stats
+        # Create car stats - handle None values
         car_stats = {
-            'engine_power': user_data[36] if len(user_data) > 36 and user_data[36] else 50,
-            'aero': user_data[37] if len(user_data) > 37 and user_data[37] else 50,
-            'handling': user_data[38] if len(user_data) > 38 and user_data[38] else 50,
-            'reliability': user_data[39] if len(user_data) > 39 and user_data[39] else 100,
-            'tyre_wear_rate': user_data[40] if len(user_data) > 40 and user_data[40] else 1.0,
-            'fuel_efficiency': user_data[41] if len(user_data) > 41 and user_data[41] else 1.0,
-            'ers_power': user_data[42] if len(user_data) > 42 and user_data[42] else 50,
-            'drs_efficiency': user_data[43] if len(user_data) > 43 and user_data[43] else 1.0,
-            'downforce_level': user_data[44] if len(user_data) > 44 and user_data[44] else 50
+            'engine_power': user_data[11] if user_data[11] is not None else 50,
+            'aero': user_data[12] if user_data[12] is not None else 50,
+            'handling': user_data[13] if user_data[13] is not None else 50,
+            'reliability': user_data[14] if user_data[14] is not None else 100,
+            'tyre_wear_rate': user_data[15] if user_data[15] is not None else 1.0,
+            'fuel_efficiency': user_data[16] if user_data[16] is not None else 1.0,
+            'ers_power': user_data[17] if user_data[17] is not None else 50,
+            'drs_efficiency': user_data[18] if user_data[18] is not None else 1.0,
+            'downforce_level': user_data[19] if user_data[19] is not None else 50
         }
         
         advanced_stats = {
-            'rain_skill': user_data[15] if len(user_data) > 15 else 50,
-            'overtaking_skill': user_data[16] if len(user_data) > 16 else 50,
-            'defending_skill': user_data[17] if len(user_data) > 17 else 50,
-            'quali_skill': user_data[18] if len(user_data) > 18 else 50,
-            'focus': user_data[6] if len(user_data) > 6 else 100,
-            'fatigue': user_data[5] if len(user_data) > 5 else 0,
+            'rain_skill': user_data[7] if user_data[7] is not None else 50,
+            'overtaking_skill': user_data[8] if user_data[8] is not None else 50,
+            'defending_skill': user_data[9] if user_data[9] is not None else 50,
+            'quali_skill': user_data[10] if user_data[10] is not None else 50,
+            'focus': user_data[6] if user_data[6] is not None else 100,
+            'fatigue': user_data[5] if user_data[5] is not None else 0,
             'tyre_management': 50
         }
         
         player_driver = Driver(
-            driver_id=player_id,
+            driver_id=user_data[0],
             name=user_data[1],
-            skill=user_data[2] if len(user_data) > 2 else 50,
-            aggression=user_data[3] if len(user_data) > 3 else 50,
-            consistency=user_data[4] if len(user_data) > 4 else 50,
+            skill=user_data[2] if user_data[2] is not None else 50,
+            aggression=user_data[3] if user_data[3] is not None else 50,
+            consistency=user_data[4] if user_data[4] is not None else 50,
             is_ai=False,
             car_stats=car_stats,
             advanced_stats=advanced_stats
@@ -5593,33 +5587,33 @@ async def startrace(interaction: discord.Interaction):
     
     for ai in ai_drivers:
         ai_car_stats = {
-            'engine_power': ai[1] * 0.9,
-            'aero': ai[1] * 0.9,
-            'handling': ai[1] * 0.9,
-            'reliability': ai[9] * 0.95,
+            'engine_power': ai[2] * 0.9,  # ai[2] is skill_rating
+            'aero': ai[2] * 0.9,
+            'handling': ai[2] * 0.9,
+            'reliability': (ai[9] if len(ai) > 9 and ai[9] else 50) * 0.95,
             'tyre_wear_rate': 1.0,
             'fuel_efficiency': 1.0,
-            'ers_power': ai[1] * 0.85,
+            'ers_power': ai[2] * 0.85,
             'drs_efficiency': 1.0,
             'downforce_level': 50
         }
         
         ai_advanced_stats = {
-            'rain_skill': ai[11] if len(ai) > 11 else 50,
-            'overtaking_skill': ai[3] if len(ai) > 3 else 50,
-            'defending_skill': ai[4] if len(ai) > 4 else 50,
-            'quali_skill': ai[12] if len(ai) > 12 else 50,
+            'rain_skill': ai[12] if len(ai) > 12 and ai[12] else 50,
+            'overtaking_skill': ai[3] if len(ai) > 3 and ai[3] else 50,
+            'defending_skill': ai[4] if len(ai) > 4 and ai[4] else 50,
+            'quali_skill': ai[13] if len(ai) > 13 and ai[13] else 50,
             'focus': 100,
             'fatigue': 0,
-            'tyre_management': ai[13] if len(ai) > 13 else 50
+            'tyre_management': ai[14] if len(ai) > 14 and ai[14] else 50
         }
         
         ai_driver = Driver(
             driver_id=ai[0],
             name=ai[1],
             skill=ai[2],
-            aggression=ai[10] if len(ai) > 10 else 50,
-            consistency=ai[9] if len(ai) > 9 else 50,
+            aggression=ai[10] if len(ai) > 10 and ai[10] else 50,
+            consistency=ai[9] if len(ai) > 9 and ai[9] else 50,
             is_ai=True,
             car_stats=ai_car_stats,
             advanced_stats=ai_advanced_stats
@@ -5664,6 +5658,9 @@ async def startrace(interaction: discord.Interaction):
     quali_embed.set_footer(text="Race starting! Check your DMs for race controls.")
     
     # Send DM to each player with controls
+    players_notified = []
+    players_failed = []
+    
     for player_id in lobby['players']:
         try:
             user = await bot.fetch_user(player_id)
@@ -5686,7 +5683,7 @@ async def startrace(interaction: discord.Interaction):
             
             control_embed.add_field(
                 name="📍 Track Updates",
-                value=f"Follow race updates in <#{interaction.channel_id}>",
+                value=f"Follow race updates in the channel",
                 inline=False
             )
             
@@ -5696,15 +5693,13 @@ async def startrace(interaction: discord.Interaction):
             view = RaceControlView(race_engine, player_id)
             
             await user.send(embed=control_embed, view=view)
+            players_notified.append(user.display_name)
             
         except discord.Forbidden:
-            # User has DMs disabled
-            await interaction.followup.send(
-                f"⚠️ <@{player_id}> - Please enable DMs to receive race controls!",
-                ephemeral=True
-            )
+            players_failed.append(f"<@{player_id}>")
         except Exception as e:
             logger.error(f"Failed to send DM to {player_id}: {e}")
+            players_failed.append(f"<@{player_id}>")
     
     # Store race in active races
     lobby['started'] = True
@@ -5714,8 +5709,16 @@ async def startrace(interaction: discord.Interaction):
     # Send qualifying results to channel
     await interaction.followup.send(embed=quali_embed)
     
+    # Notify about DM status
+    if players_failed:
+        await interaction.followup.send(
+            f"⚠️ Failed to send DMs to: {', '.join(players_failed)}\n"
+            f"Please enable DMs to receive race controls!",
+            ephemeral=False
+        )
+    
     # Send initial race status
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     
     status_embed = discord.Embed(
         title="🏁 Race Started!",
@@ -5731,171 +5734,45 @@ async def startrace(interaction: discord.Interaction):
     
     status_embed.add_field(
         name="⚡ Next Step",
-        value="Race creator or any player can use `/nextlap` to advance the race!",
+        value="Use `/nextlap` to advance the race!",
         inline=False
     )
+    
+    if players_notified:
+        status_embed.add_field(
+            name="✅ Controls Sent To",
+            value=", ".join(players_notified),
+            inline=False
+        )
     
     await interaction.channel.send(embed=status_embed)
 
 
-@bot.tree.command(name="nextlap", description="Simulate the next lap")
-async def nextlap(interaction: discord.Interaction):
-    """Advance race by one lap - shows standings in channel"""
-    
-    if interaction.channel_id not in active_races:
-        await interaction.response.send_message(
-            "❌ No active race! Use `/createrace` and `/startrace`.",
-            ephemeral=True
-        )
-        return
-    
-    race = active_races[interaction.channel_id]
-    
-    # Check if race is finished
-    if race.current_lap >= race.total_laps:
-        await interaction.response.send_message(
-            "🏁 Race finished! Use `/results` to see final standings.",
-            ephemeral=True
-        )
-        return
-    
-    await interaction.response.defer()
-    
-    # Simulate lap
-    race.simulate_lap()
-    
-    # Create standings embed for CHANNEL
-    embed = discord.Embed(
-        title=f"📊 Lap {race.current_lap}/{race.total_laps} - {race.track}",
-        description="Current Race Standings",
-        color=discord.Color.blue()
-    )
-    
-    # Weather info
-    weather_emoji = {
-        "clear": "☀️", "cloudy": "☁️", "light_rain": "🌦️",
-        "rain": "🌧️", "heavy_rain": "⛈️"
-    }
-    
-    conditions = f"{weather_emoji.get(race.weather, '☀️')} {race.weather.title()}"
-    if race.safety_car:
-        conditions += " | 🚨 SAFETY CAR"
-    elif race.virtual_safety_car:
-        conditions += " | 🟡 VSC"
-    if race.drs_enabled:
-        conditions += " | 💨 DRS"
-    
-    embed.add_field(name="🌦️ Conditions", value=conditions, inline=False)
-    
-    # Show top 10 positions with gaps
-    active_drivers = sorted([d for d in race.drivers if not d.dnf], key=lambda x: x.position)
-    
-    standings_text = ""
-    for driver in active_drivers[:10]:
-        # Position indicator
-        if driver.position == 1:
-            pos_emoji = "🥇"
-        elif driver.position == 2:
-            pos_emoji = "🥈"
-        elif driver.position == 3:
-            pos_emoji = "🥉"
-        else:
-            pos_emoji = f"**P{driver.position}**"
-        
-        # Player indicator
-        player_emoji = "👤" if not driver.is_ai else "🤖"
-        
-        # Gap to leader
-        if driver.position == 1:
-            gap_str = "Leader"
-        elif driver.gap_to_leader < 1.0:
-            gap_str = f"+{driver.gap_to_leader:.3f}s"
-        else:
-            gap_str = f"+{driver.gap_to_leader:.1f}s"
-        
-        # Tyre info
-        tyre_emoji = {
-            "soft": "🔴", "medium": "🟡", "hard": "⚪",
-            "inter": "🟢", "wet": "🔵"
-        }
-        tyre_str = f"{tyre_emoji.get(driver.tyre_compound, '⚪')}{int(driver.tyre_condition)}%"
-        
-        standings_text += f"{pos_emoji} {player_emoji} **{driver.name}** - {gap_str} | {tyre_str}\n"
-    
-    embed.add_field(
-        name="🏁 Standings",
-        value=standings_text,
-        inline=False
-    )
-    
-    # Show key events from this lap
-    if race.lap_events:
-        events_text = "\n".join(race.lap_events[:5])
-        embed.add_field(
-            name="📰 Lap Highlights",
-            value=events_text[:1000],
-            inline=False
-        )
-    
-    # DNFs
-    dnfs = [d for d in race.drivers if d.dnf]
-    if dnfs:
-        dnf_text = "\n".join([f"❌ {d.name} ({d.dnf_reason})" for d in dnfs[-3:]])
-        embed.add_field(name="💥 Retirements", value=dnf_text, inline=False)
-    
-    embed.set_footer(text="Use /nextlap to continue | Race controls in your DMs")
-    
-    await interaction.followup.send(embed=embed)
-    
-    # Update each player's DM with their personal stats
-    if interaction.channel_id in race_lobbies:
-        lobby = race_lobbies[interaction.channel_id]
-        
-        for player_id in lobby['players']:
-            driver = next((d for d in race.drivers if d.id == player_id), None)
-            
-            if not driver or driver.dnf:
-                continue
-            
-            try:
-                user = await bot.fetch_user(player_id)
-                
-                # Personal stats embed
-                stats_embed = discord.Embed(
-                    title=f"📊 Lap {race.current_lap} - Your Stats",
-                    color=discord.Color.blue()
-                )
-                
-                stats_embed.add_field(name="Position", value=f"P{driver.position}", inline=True)
-                stats_embed.add_field(
-                    name="Gap to Leader",
-                    value=f"+{driver.gap_to_leader:.2f}s" if driver.position > 1 else "Leading!",
-                    inline=True
-                )
-                stats_embed.add_field(name="Last Lap", value=f"{driver.lap_time:.2f}s", inline=True)
-                
-                # Tyres & Fuel
-                stats_embed.add_field(
-                    name="Tyres",
-                    value=f"{driver.tyre_compound.upper()} - {driver.tyre_condition:.0f}% ({driver.tyre_age}L)",
-                    inline=True
-                )
-                stats_embed.add_field(name="Fuel", value=f"{driver.fuel_load:.0f}%", inline=True)
-                stats_embed.add_field(name="ERS", value=f"{driver.ers_charge:.0f}%", inline=True)
-                
-                # Strategy
-                stats_embed.add_field(name="Push Mode", value=f"{driver.push_mode}%", inline=True)
-                stats_embed.add_field(name="Damage", value=f"{driver.damage:.0f}%", inline=True)
-                stats_embed.add_field(name="Pit Stops", value=str(driver.pit_stops), inline=True)
-                
-                if driver.drs_available:
-                    stats_embed.add_field(name="💨 DRS", value="Available!", inline=False)
-                
-                await user.send(embed=stats_embed)
-                
-            except Exception as e:
-                logger.error(f"Failed to send lap update to {player_id}: {e}")
+**Key fixes:**
+1. Proper database column indexing
+2. Handle `None` values from database
+3. Correct AI driver attribute access
+4. Better error handling for DMs
+5. Fixed field positions in SQL queries
+6. Added player notification feedback
 
+This should now work properly!
+    
+    # Check if already joined
+    if interaction.user.id in lobby['players']:
+        await interaction.response.send_message(
+            "❌ You've already joined this race!",
+            ephemeral=True
+        )
+        return
+    
+    # Check if lobby is full
+    if len(lobby['players']) >= lobby['max_players']:
+        await interaction.response.send_message(
+            "❌ Race lobby is full!",
+            ephemeral=True
+        )
+        return
 
 @bot.tree.command(name="results", description="View final race results")
 async def results(interaction: discord.Interaction):
@@ -6007,8 +5884,6 @@ async def results(interaction: discord.Interaction):
     embed.set_footer(text="Race complete! Create a new race with /createrace")
     
     await interaction.followup.send(embed=embed)
-
-
 @bot.tree.command(name="cancelrace", description="Cancel the race lobby (creator only)")
 async def cancelrace(interaction: discord.Interaction):
     """Cancel race lobby"""
