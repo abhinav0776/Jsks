@@ -5747,17 +5747,6 @@ async def startrace(interaction: discord.Interaction):
     
     await interaction.channel.send(embed=status_embed)
 
-
-**Key fixes:**
-1. Proper database column indexing
-2. Handle `None` values from database
-3. Correct AI driver attribute access
-4. Better error handling for DMs
-5. Fixed field positions in SQL queries
-6. Added player notification feedback
-
-This should now work properly!
-    
     # Check if already joined
     if interaction.user.id in lobby['players']:
         await interaction.response.send_message(
