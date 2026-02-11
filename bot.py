@@ -6113,7 +6113,7 @@ async def simulate(interaction: discord.Interaction, laps: int = 5):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="results", description="View final race results")
+@bot.tree.command(name="raceresults", description="View final race results")
 async def results(interaction: discord.Interaction):
     """Display final race results and save to database"""
     
