@@ -6448,8 +6448,736 @@ async def racecalendar(interaction: discord.Interaction):
     conn.close()
     await interaction.response.send_message(embed=embed)    
     
-    
+# ============================================================
+# MULTIPLAYER RACE COMMANDS
+# Paste these into your bot file alongside existing commands
+# race_lobbies: Dict[int, Dict] = {} must be at the top
+# ============================================================
 
+
+# ============================================================
+# /createrace — Host opens a lobby
+# ============================================================
+
+@bot.tree.command(name="createrace", description="Create a multiplayer race lobby")
+@app_commands.describe(
+    track="Track to race on",
+    laps="Number of laps (5-50)",
+    weather="Starting weather",
+    max_players="Max human players (2-10)",
+    ai_fill="Fill remaining slots with AI?"
+)
+@app_commands.choices(
+    track=[
+        app_commands.Choice(name="🇮🇹 Monza",      value="Monza"),
+        app_commands.Choice(name="🇲🇨 Monaco",      value="Monaco"),
+        app_commands.Choice(name="🇧🇪 Spa",         value="Spa"),
+        app_commands.Choice(name="🇬🇧 Silverstone", value="Silverstone"),
+        app_commands.Choice(name="🇯🇵 Suzuka",      value="Suzuka"),
+        app_commands.Choice(name="🇸🇬 Singapore",   value="Singapore"),
+        app_commands.Choice(name="🇧🇭 Bahrain",     value="Bahrain"),
+        app_commands.Choice(name="🇸🇦 Jeddah",      value="Jeddah"),
+        app_commands.Choice(name="🇺🇸 Miami",       value="Miami"),
+        app_commands.Choice(name="🇺🇸 Las Vegas",   value="Las Vegas"),
+    ],
+    weather=[
+        app_commands.Choice(name="☀️ Clear",      value="clear"),
+        app_commands.Choice(name="☁️ Cloudy",     value="cloudy"),
+        app_commands.Choice(name="🌦️ Light Rain", value="light_rain"),
+        app_commands.Choice(name="🌧️ Rain",       value="rain"),
+        app_commands.Choice(name="⛈️ Heavy Rain", value="heavy_rain"),
+    ]
+)
+async def createrace(
+    interaction: discord.Interaction,
+    track: app_commands.Choice[str] = None,
+    laps: int = 10,
+    weather: app_commands.Choice[str] = None,
+    max_players: int = 4,
+    ai_fill: bool = True
+):
+    # Block if a lobby or race already exists in this channel
+    if interaction.channel_id in race_lobbies:
+        await interaction.response.send_message(
+            "❌ A lobby already exists in this channel! Use `/leaverace` to close it first.",
+            ephemeral=True
+        )
+        return
+    if interaction.channel_id in active_races:
+        await interaction.response.send_message(
+            "❌ A race is already running in this channel!",
+            ephemeral=True
+        )
+        return
+
+    # Validate inputs
+    if not 5 <= laps <= 50:
+        await interaction.response.send_message("❌ Laps must be between 5 and 50!", ephemeral=True)
+        return
+    if not 2 <= max_players <= 10:
+        await interaction.response.send_message("❌ Max players must be between 2 and 10!", ephemeral=True)
+        return
+
+    # Check the host has a profile and active car
+    conn = db.get_conn()
+    c = conn.cursor()
+    c.execute("SELECT driver_name FROM users WHERE user_id = ?", (interaction.user.id,))
+    user = c.fetchone()
+    if not user:
+        await interaction.response.send_message(
+            "❌ You need a profile first! Use `/profile`.", ephemeral=True
+        )
+        conn.close()
+        return
+    c.execute("SELECT car_id FROM cars WHERE owner_id = ? AND is_active = 1", (interaction.user.id,))
+    if not c.fetchone():
+        await interaction.response.send_message(
+            "❌ You need an active car! Use `/garage` or `/buycar`.", ephemeral=True
+        )
+        conn.close()
+        return
+    conn.close()
+
+    selected_track   = track.value   if track   else "Monza"
+    selected_weather = weather.value if weather else "clear"
+
+    # Store lobby state
+    race_lobbies[interaction.channel_id] = {
+        "host_id":     interaction.user.id,
+        "host_name":   interaction.user.display_name,
+        "track":       selected_track,
+        "laps":        laps,
+        "weather":     selected_weather,
+        "max_players": max_players,
+        "ai_fill":     ai_fill,
+        "players":     {interaction.user.id: interaction.user.display_name},  # host auto-joins
+        "started":     False,
+        "created_at":  datetime.now()
+    }
+
+    embed = discord.Embed(
+        title="🏁 Multiplayer Race Lobby Created!",
+        description=f"**Host:** {interaction.user.display_name}\nWaiting for drivers...",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="🏎️ Track",   value=selected_track,           inline=True)
+    embed.add_field(name="🔢 Laps",    value=str(laps),                inline=True)
+    embed.add_field(name="🌦️ Weather", value=selected_weather.title(), inline=True)
+    embed.add_field(name="👥 Players", value=f"1 / {max_players}",     inline=True)
+    embed.add_field(name="🤖 AI Fill", value="Yes" if ai_fill else "No", inline=True)
+    embed.add_field(
+        name="📋 Drivers",
+        value=f"1. {interaction.user.display_name} (Host)",
+        inline=False
+    )
+    embed.set_footer(text="Use /joinrace to join • /startrace to begin • /leaverace to cancel")
+
+    await interaction.response.send_message(embed=embed)
+    logger.info(f"Multiplayer lobby created by {interaction.user.name} on {selected_track}")
+
+
+# ============================================================
+# /joinrace — Other players join the lobby
+# ============================================================
+
+@bot.tree.command(name="joinrace", description="Join a multiplayer race lobby in this channel")
+async def joinrace(interaction: discord.Interaction):
+
+    # Check lobby exists
+    if interaction.channel_id not in race_lobbies:
+        await interaction.response.send_message(
+            "❌ No lobby in this channel! Use `/createrace` to make one.",
+            ephemeral=True
+        )
+        return
+
+    lobby = race_lobbies[interaction.channel_id]
+
+    # Check lobby not already started
+    if lobby["started"]:
+        await interaction.response.send_message(
+            "❌ This race has already started!",
+            ephemeral=True
+        )
+        return
+
+    # Check player not already in lobby
+    if interaction.user.id in lobby["players"]:
+        await interaction.response.send_message(
+            "❌ You're already in this lobby!",
+            ephemeral=True
+        )
+        return
+
+    # Check lobby not full
+    if len(lobby["players"]) >= lobby["max_players"]:
+        await interaction.response.send_message(
+            f"❌ Lobby is full! ({lobby['max_players']}/{lobby['max_players']} players)",
+            ephemeral=True
+        )
+        return
+
+    # Check joining player has a profile and active car
+    conn = db.get_conn()
+    c = conn.cursor()
+    c.execute("SELECT driver_name FROM users WHERE user_id = ?", (interaction.user.id,))
+    user = c.fetchone()
+    if not user:
+        await interaction.response.send_message(
+            "❌ You need a profile first! Use `/profile`.", ephemeral=True
+        )
+        conn.close()
+        return
+    c.execute("SELECT car_id FROM cars WHERE owner_id = ? AND is_active = 1", (interaction.user.id,))
+    if not c.fetchone():
+        await interaction.response.send_message(
+            "❌ You need an active car! Use `/garage` or `/buycar`.", ephemeral=True
+        )
+        conn.close()
+        return
+    conn.close()
+
+    # Add player to lobby
+    lobby["players"][interaction.user.id] = interaction.user.display_name
+
+    # Build updated driver list
+    driver_list = "\n".join(
+        f"{i+1}. {name}{' (Host)' if uid == lobby['host_id'] else ''}"
+        for i, (uid, name) in enumerate(lobby["players"].items())
+    )
+
+    embed = discord.Embed(
+        title="✅ Joined the Race Lobby!",
+        description=f"**{interaction.user.display_name}** is ready to race!",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="🏎️ Track",   value=lobby["track"],                        inline=True)
+    embed.add_field(name="🔢 Laps",    value=str(lobby["laps"]),                    inline=True)
+    embed.add_field(name="👥 Players", value=f"{len(lobby['players'])} / {lobby['max_players']}", inline=True)
+    embed.add_field(name="📋 Drivers", value=driver_list, inline=False)
+    embed.set_footer(text=f"Waiting for host ({lobby['host_name']}) to use /startrace")
+
+    await interaction.response.send_message(embed=embed)
+    logger.info(f"{interaction.user.name} joined the lobby in channel {interaction.channel_id}")
+
+
+# ============================================================
+# /startrace — Host launches the race
+# ============================================================
+
+@bot.tree.command(name="startrace", description="Start the multiplayer race (host only)")
+async def startrace(interaction: discord.Interaction):
+
+    # Check lobby exists
+    if interaction.channel_id not in race_lobbies:
+        await interaction.response.send_message(
+            "❌ No lobby in this channel! Use `/createrace` first.",
+            ephemeral=True
+        )
+        return
+
+    lobby = race_lobbies[interaction.channel_id]
+
+    # Only the host can start
+    if interaction.user.id != lobby["host_id"]:
+        await interaction.response.send_message(
+            f"❌ Only the host ({lobby['host_name']}) can start the race!",
+            ephemeral=True
+        )
+        return
+
+    # Need at least 2 human players
+    if len(lobby["players"]) < 2:
+        await interaction.response.send_message(
+            "❌ Need at least 2 players to start! Wait for someone to `/joinrace`.",
+            ephemeral=True
+        )
+        return
+
+    if lobby["started"]:
+        await interaction.response.send_message("❌ Race already started!", ephemeral=True)
+        return
+
+    lobby["started"] = True
+    await interaction.response.defer()
+
+    # Build race engine
+    race_engine = RaceEngine(
+        track=lobby["track"],
+        laps=lobby["laps"],
+        weather=lobby["weather"],
+        qualifying=True
+    )
+
+    conn = db.get_conn()
+    c = conn.cursor()
+
+    # Add every human player as a Driver
+    for user_id, display_name in lobby["players"].items():
+        c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = c.fetchone()
+        c.execute("SELECT * FROM cars WHERE owner_id = ? AND is_active = 1", (user_id,))
+        car = c.fetchone()
+
+        if not user or not car:
+            # Skip broken profiles silently
+            continue
+
+        player_stats = {
+            "rain_skill":       user[15],
+            "overtaking_skill": user[16],
+            "defending_skill":  user[17],
+            "quali_skill":      user[18],
+            "focus":            user[7],
+            "fatigue":          user[6],
+            "tyre_management":  50
+        }
+        car_stats = {
+            "engine_power":    car[5],
+            "aero":            car[6],
+            "handling":        car[7],
+            "reliability":     car[8],
+            "tyre_wear_rate":  car[9],
+            "fuel_efficiency": car[10],
+            "ers_power":       car[15],
+            "drs_efficiency":  car[16],
+            "downforce_level": car[17]
+        }
+
+        driver = Driver(
+            driver_id=user_id,
+            name=display_name,
+            skill=user[2],
+            aggression=user[3],
+            consistency=user[4],
+            is_ai=False,
+            car_stats=car_stats,
+            advanced_stats=player_stats
+        )
+        race_engine.add_driver(driver)
+
+    # Fill remaining grid with AI if enabled
+    if lobby["ai_fill"]:
+        current_count = len(race_engine.drivers)
+        ai_slots = max(0, 19 - current_count)  # fill up to 20-car grid
+        if ai_slots > 0:
+            c.execute("SELECT * FROM ai_profiles ORDER BY RANDOM() LIMIT ?", (ai_slots,))
+            for ai in c.fetchall():
+                ai_car_stats = {
+                    "engine_power":    random.uniform(60, 90),
+                    "aero":            random.uniform(60, 90),
+                    "handling":        random.uniform(60, 90),
+                    "reliability":     random.uniform(85, 98),
+                    "tyre_wear_rate":  random.uniform(0.9, 1.1),
+                    "fuel_efficiency": random.uniform(0.9, 1.1),
+                    "ers_power":       random.uniform(50, 80),
+                    "drs_efficiency":  random.uniform(0.9, 1.1),
+                    "downforce_level": random.uniform(50, 80)
+                }
+                ai_advanced = {
+                    "rain_skill":       ai[12],
+                    "overtaking_skill": ai[3],
+                    "defending_skill":  ai[4],
+                    "quali_skill":      ai[13],
+                    "focus":            100,
+                    "fatigue":          0,
+                    "tyre_management":  ai[14]
+                }
+                ai_driver = Driver(
+                    driver_id=ai[0],
+                    name=ai[1],
+                    skill=ai[2],
+                    aggression=ai[10],
+                    consistency=ai[11],
+                    is_ai=True,
+                    car_stats=ai_car_stats,
+                    advanced_stats=ai_advanced
+                )
+                race_engine.add_driver(ai_driver)
+
+    conn.close()
+
+    # Run qualifying to set the grid
+    quali_results = race_engine.run_qualifying()
+
+    # Store in active_races and clean up lobby
+    active_races[interaction.channel_id] = race_engine
+    del race_lobbies[interaction.channel_id]
+
+    # Build qualifying embed
+    quali_lines = ""
+    for idx, (driver, time) in enumerate(quali_results[:10], 1):
+        tag = " 👤" if not driver.is_ai else ""
+        quali_lines += f"P{idx}. {driver.name}{tag} — {time:.3f}s\n"
+
+    human_count = sum(1 for d in race_engine.drivers if not d.is_ai)
+    ai_count    = sum(1 for d in race_engine.drivers if     d.is_ai)
+
+    embed = discord.Embed(
+        title="🏁 LIGHTS OUT AND AWAY WE GO!",
+        description=f"**{race_engine.track_data[lobby['track']]['name']}**",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="🏎️ Track",       value=lobby["track"],                        inline=True)
+    embed.add_field(name="🔢 Laps",        value=str(lobby["laps"]),                    inline=True)
+    embed.add_field(name="🌦️ Weather",     value=lobby["weather"].title(),              inline=True)
+    embed.add_field(name="👤 Human Drivers", value=str(human_count),                    inline=True)
+    embed.add_field(name="🤖 AI Drivers",  value=str(ai_count),                         inline=True)
+    embed.add_field(name="🏁 Grid (Top 10)", value=quali_lines or "N/A",                inline=False)
+    embed.set_footer(text="Use /nextlap to progress • /raceresults when finished • 👤 = human driver")
+
+    # Attach race controls for each human player — each gets their own ephemeral view
+    view = RaceControlView(race_engine, interaction.user.id)
+    msg = await interaction.followup.send(
+        content=" ".join(f"<@{uid}>" for uid in lobby["players"]),
+        embed=embed,
+        view=view
+    )
+    race_messages[interaction.channel_id] = msg
+    logger.info(
+        f"Multiplayer race started on {lobby['track']} with "
+        f"{human_count} humans and {ai_count} AI drivers"
+    )
+
+
+# ============================================================
+# /leaverace — Player exits lobby, or host cancels it
+# ============================================================
+
+@bot.tree.command(name="leaverace", description="Leave the lobby or cancel it if you are the host")
+async def leaverace(interaction: discord.Interaction):
+
+    # Check lobby exists
+    if interaction.channel_id not in race_lobbies:
+        # Allow leaving an active race mid-race too (forfeit)
+        if interaction.channel_id in active_races:
+            race_engine = active_races[interaction.channel_id]
+            driver = next(
+                (d for d in race_engine.drivers if d.id == interaction.user.id), None
+            )
+            if driver:
+                driver.dnf = True
+                driver.dnf_reason = "Disconnected"
+                await interaction.response.send_message(
+                    f"🚪 **{interaction.user.display_name}** has left the race! Marked as DNF.",
+                )
+                logger.info(f"{interaction.user.name} left mid-race (DNF)")
+            else:
+                await interaction.response.send_message(
+                    "❌ You are not in the active race.", ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                "❌ No lobby or race found in this channel.", ephemeral=True
+            )
+        return
+
+    lobby = race_lobbies[interaction.channel_id]
+
+    # Host leaving cancels the entire lobby
+    if interaction.user.id == lobby["host_id"]:
+        del race_lobbies[interaction.channel_id]
+        embed = discord.Embed(
+            title="🚫 Lobby Cancelled",
+            description=f"Host **{interaction.user.display_name}** closed the lobby.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed)
+        logger.info(f"Lobby cancelled by host {interaction.user.name}")
+        return
+
+    # Non-host leaving just removes them
+    if interaction.user.id not in lobby["players"]:
+        await interaction.response.send_message(
+            "❌ You are not in this lobby!", ephemeral=True
+        )
+        return
+
+    del lobby["players"][interaction.user.id]
+
+    # Build updated driver list
+    driver_list = "\n".join(
+        f"{i+1}. {name}{' (Host)' if uid == lobby['host_id'] else ''}"
+        for i, (uid, name) in enumerate(lobby["players"].items())
+    ) or "None"
+
+    embed = discord.Embed(
+        title="🚪 Left the Lobby",
+        description=f"**{interaction.user.display_name}** left the race.",
+        color=discord.Color.orange()
+    )
+    embed.add_field(
+        name=f"👥 Players ({len(lobby['players'])} / {lobby['max_players']})",
+        value=driver_list,
+        inline=False
+    )
+    embed.set_footer(text=f"Waiting for host ({lobby['host_name']}) to use /startrace")
+
+    await interaction.response.send_message(embed=embed)
+    logger.info(f"{interaction.user.name} left the lobby in channel {interaction.channel_id}")
+# ============================================================
+# /startrace — Host launches the race, auto-simulates laps
+# Replace your existing /startrace with this version
+# ============================================================
+
+@bot.tree.command(name="startrace", description="Start the multiplayer race (host only)")
+async def startrace(interaction: discord.Interaction):
+
+    # Check lobby exists
+    if interaction.channel_id not in race_lobbies:
+        await interaction.response.send_message(
+            "❌ No lobby in this channel! Use `/createrace` first.",
+            ephemeral=True
+        )
+        return
+
+    lobby = race_lobbies[interaction.channel_id]
+
+    # Only the host can start
+    if interaction.user.id != lobby["host_id"]:
+        await interaction.response.send_message(
+            f"❌ Only the host ({lobby['host_name']}) can start the race!",
+            ephemeral=True
+        )
+        return
+
+    # Need at least 2 human players
+    if len(lobby["players"]) < 2:
+        await interaction.response.send_message(
+            "❌ Need at least 2 players! Wait for someone to `/joinrace`.",
+            ephemeral=True
+        )
+        return
+
+    if lobby["started"]:
+        await interaction.response.send_message("❌ Race already started!", ephemeral=True)
+        return
+
+    lobby["started"] = True
+    await interaction.response.defer()
+
+    # --------------------------------------------------------
+    # Build race engine
+    # --------------------------------------------------------
+    race_engine = RaceEngine(
+        track=lobby["track"],
+        laps=lobby["laps"],
+        weather=lobby["weather"],
+        qualifying=True
+    )
+
+    conn = db.get_conn()
+    c = conn.cursor()
+
+    # Add every human player as a Driver
+    for user_id, display_name in lobby["players"].items():
+        c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = c.fetchone()
+        c.execute("SELECT * FROM cars WHERE owner_id = ? AND is_active = 1", (user_id,))
+        car = c.fetchone()
+
+        if not user or not car:
+            continue
+
+        player_stats = {
+            "rain_skill":       user[15],
+            "overtaking_skill": user[16],
+            "defending_skill":  user[17],
+            "quali_skill":      user[18],
+            "focus":            user[7],
+            "fatigue":          user[6],
+            "tyre_management":  50
+        }
+        car_stats = {
+            "engine_power":    car[5],
+            "aero":            car[6],
+            "handling":        car[7],
+            "reliability":     car[8],
+            "tyre_wear_rate":  car[9],
+            "fuel_efficiency": car[10],
+            "ers_power":       car[15],
+            "drs_efficiency":  car[16],
+            "downforce_level": car[17]
+        }
+
+        driver = Driver(
+            driver_id=user_id,
+            name=display_name,
+            skill=user[2],
+            aggression=user[3],
+            consistency=user[4],
+            is_ai=False,
+            car_stats=car_stats,
+            advanced_stats=player_stats
+        )
+        race_engine.add_driver(driver)
+
+    # Fill remaining grid with AI if enabled
+    if lobby["ai_fill"]:
+        current_count = len(race_engine.drivers)
+        ai_slots = max(0, 19 - current_count)
+        if ai_slots > 0:
+            c.execute("SELECT * FROM ai_profiles ORDER BY RANDOM() LIMIT ?", (ai_slots,))
+            for ai in c.fetchall():
+                ai_car_stats = {
+                    "engine_power":    random.uniform(60, 90),
+                    "aero":            random.uniform(60, 90),
+                    "handling":        random.uniform(60, 90),
+                    "reliability":     random.uniform(85, 98),
+                    "tyre_wear_rate":  random.uniform(0.9, 1.1),
+                    "fuel_efficiency": random.uniform(0.9, 1.1),
+                    "ers_power":       random.uniform(50, 80),
+                    "drs_efficiency":  random.uniform(0.9, 1.1),
+                    "downforce_level": random.uniform(50, 80)
+                }
+                ai_advanced = {
+                    "rain_skill":       ai[12],
+                    "overtaking_skill": ai[3],
+                    "defending_skill":  ai[4],
+                    "quali_skill":      ai[13],
+                    "focus":            100,
+                    "fatigue":          0,
+                    "tyre_management":  ai[14]
+                }
+                ai_driver = Driver(
+                    driver_id=ai[0],
+                    name=ai[1],
+                    skill=ai[2],
+                    aggression=ai[10],
+                    consistency=ai[11],
+                    is_ai=True,
+                    car_stats=ai_car_stats,
+                    advanced_stats=ai_advanced
+                )
+                race_engine.add_driver(ai_driver)
+
+    conn.close()
+
+    # Run qualifying to set the grid
+    quali_results = race_engine.run_qualifying()
+
+    # Store in active_races and clean up lobby
+    active_races[interaction.channel_id] = race_engine
+    channel_id = interaction.channel_id
+    del race_lobbies[interaction.channel_id]
+
+    # --------------------------------------------------------
+    # Send the qualifying / race-start embed
+    # --------------------------------------------------------
+    quali_lines = ""
+    for idx, (driver, time) in enumerate(quali_results[:10], 1):
+        tag = " 👤" if not driver.is_ai else ""
+        quali_lines += f"P{idx}. {driver.name}{tag} — {time:.3f}s\n"
+
+    human_count = sum(1 for d in race_engine.drivers if not d.is_ai)
+    ai_count    = sum(1 for d in race_engine.drivers if     d.is_ai)
+
+    start_embed = discord.Embed(
+        title="🏁 LIGHTS OUT AND AWAY WE GO!",
+        description=f"**{race_engine.track_data[lobby['track']]['name']}**\nFirst lap in **5 seconds...**",
+        color=discord.Color.green()
+    )
+    start_embed.add_field(name="🏎️ Track",        value=lobby["track"],           inline=True)
+    start_embed.add_field(name="🔢 Laps",         value=str(lobby["laps"]),       inline=True)
+    start_embed.add_field(name="🌦️ Weather",      value=lobby["weather"].title(), inline=True)
+    start_embed.add_field(name="👤 Human Drivers", value=str(human_count),        inline=True)
+    start_embed.add_field(name="🤖 AI Drivers",   value=str(ai_count),            inline=True)
+    start_embed.add_field(name="🏁 Grid (Top 10)", value=quali_lines or "N/A",    inline=False)
+    start_embed.set_footer(text="👤 = human driver  •  Auto-simulating every 5 seconds")
+
+    view = RaceControlView(race_engine, interaction.user.id)
+    msg = await interaction.followup.send(
+        content=" ".join(f"<@{uid}>" for uid in lobby["players"]),
+        embed=start_embed,
+        view=view
+    )
+    race_messages[channel_id] = msg
+
+    logger.info(
+        f"Multiplayer race started on {lobby['track']} with "
+        f"{human_count} humans and {ai_count} AI"
+    )
+
+    # --------------------------------------------------------
+    # Background task — simulates one lap every 5 seconds
+    # and edits the original message in place
+    # --------------------------------------------------------
+    async def auto_simulate():
+        channel = interaction.channel
+
+        while channel_id in active_races:
+            race = active_races[channel_id]
+
+            # Race finished — post final results and clean up
+            if race.current_lap >= race.total_laps:
+                results_text = race.get_final_results()
+
+                final_embed = discord.Embed(
+                    title="🏆 RACE FINISHED — FINAL RESULTS",
+                    description=results_text,
+                    color=discord.Color.gold()
+                )
+                final_embed.set_footer(text="Use /raceresults to claim your rewards!")
+
+                await channel.send(
+                    content=" ".join(f"<@{uid}>" for uid in lobby["players"]),
+                    embed=final_embed
+                )
+
+                # Clean up
+                del active_races[channel_id]
+                if channel_id in race_messages:
+                    del race_messages[channel_id]
+
+                logger.info(f"Auto-simulation finished race on {lobby['track']}")
+                return
+
+            # Wait 5 seconds between laps
+            await asyncio.sleep(5)
+
+            # Simulate next lap
+            race.simulate_lap()
+
+            summary = race.get_race_summary(detailed=False)
+
+            lap_embed = discord.Embed(
+                title=f"📊 Lap {race.current_lap} / {race.total_laps}",
+                description=summary,
+                color=discord.Color.blue()
+            )
+
+            # Show the last 8 notable events from this lap
+            if race.lap_events:
+                events_str = "\n".join(race.lap_events[-8:])
+                lap_embed.add_field(name="📢 Lap Events", value=events_str, inline=False)
+
+            # Warn when approaching final lap
+            laps_left = race.total_laps - race.current_lap
+            if laps_left == 0:
+                lap_embed.set_footer(text="🏁 FINAL LAP!")
+            elif laps_left <= 3:
+                lap_embed.set_footer(text=f"⚡ {laps_left} laps remaining!")
+            else:
+                lap_embed.set_footer(text=f"{laps_left} laps remaining • Auto-simulating every 5s")
+
+            try:
+                # Edit the original race message so the channel stays clean
+                stored_msg = race_messages.get(channel_id)
+                if stored_msg:
+                    await stored_msg.edit(embed=lap_embed)
+                else:
+                    # Fallback — send a new message if the original was deleted
+                    new_msg = await channel.send(embed=lap_embed)
+                    race_messages[channel_id] = new_msg
+            except discord.NotFound:
+                # Original message was deleted — send fresh
+                new_msg = await channel.send(embed=lap_embed)
+                race_messages[channel_id] = new_msg
+            except Exception as e:
+                logger.error(f"Auto-simulate edit error: {e}")
+
+    # Fire the background loop without blocking the command response
+    asyncio.create_task(auto_simulate())
     # This code would continue with:
 # - All 100 commands across categories
 # - Full race creation & management
