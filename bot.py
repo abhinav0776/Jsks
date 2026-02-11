@@ -6664,7 +6664,137 @@ async def joinrace(interaction: discord.Interaction):
 # ============================================================
 # /startrace — Host launches the race
 # ============================================================
+# ============================================================
+# /simulatelap — Manually simulate one lap at any time
+# Works alongside the auto-simulate in /startrace
+# ============================================================
 
+@bot.tree.command(name="simulatelap", description="Manually simulate the next lap")
+async def simulatelap(interaction: discord.Interaction):
+
+    # Check a race is active in this channel
+    if interaction.channel_id not in active_races:
+        await interaction.response.send_message(
+            "❌ No active race in this channel! Use `/createrace` then `/startrace` first.",
+            ephemeral=True
+        )
+        return
+
+    race = active_races[interaction.channel_id]
+
+    # Check race is not already finished
+    if race.current_lap >= race.total_laps:
+        await interaction.response.send_message(
+            "🏁 The race is already finished! Use `/raceresults` to claim rewards.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    # Simulate the lap
+    race.simulate_lap()
+
+    summary = race.get_race_summary(detailed=True)
+
+    laps_left = race.total_laps - race.current_lap
+
+    # Pick embed colour based on how close to the end we are
+    if laps_left == 0:
+        colour = discord.Color.gold()
+    elif laps_left <= 3:
+        colour = discord.Color.orange()
+    else:
+        colour = discord.Color.blue()
+
+    embed = discord.Embed(
+        title=f"📊 Lap {race.current_lap} / {race.total_laps}",
+        description=summary,
+        colour=colour
+    )
+
+    # Show up to 10 events from this lap
+    if race.lap_events:
+        events_str = "\n".join(race.lap_events[-10:])
+        embed.add_field(name="📢 Lap Events", value=events_str, inline=False)
+
+    # Show a breakdown of every human player's current status
+    human_drivers = [d for d in race.drivers if not d.is_ai]
+    if human_drivers:
+        human_lines = ""
+        for d in human_drivers:
+            tyre_emoji = {
+                "soft": "🔴", "medium": "🟡", "hard": "⚪",
+                "inter": "🟢", "wet": "🔵"
+            }.get(d.tyre_compound, "⚪")
+
+            if d.dnf:
+                status = f"❌ DNF ({d.dnf_reason})"
+            else:
+                status = (
+                    f"P{d.position} | "
+                    f"{tyre_emoji} {d.tyre_condition:.0f}% | "
+                    f"⛽ {d.fuel_load:.0f}% | "
+                    f"⚡ ERS {d.ers_charge:.0f}% | "
+                    f"💥 Dmg {d.damage:.0f}%"
+                )
+
+            human_lines += f"👤 **{d.name}** — {status}\n"
+
+        embed.add_field(name="👥 Human Drivers", value=human_lines, inline=False)
+
+    # Footer message changes as race nears end
+    if laps_left == 0:
+        embed.set_footer(text="🏁 FINAL LAP COMPLETE — Use /raceresults to claim rewards!")
+    elif laps_left == 1:
+        embed.set_footer(text="⚡ FINAL LAP NEXT!")
+    elif laps_left <= 3:
+        embed.set_footer(text=f"🔥 {laps_left} laps remaining!")
+    else:
+        embed.set_footer(text=f"{laps_left} laps remaining • Use /simulatelap again or let auto-sim run")
+
+    # If the race just finished on this lap, announce it
+    if race.current_lap >= race.total_laps:
+        results_text = race.get_final_results()
+
+        final_embed = discord.Embed(
+            title="🏆 RACE FINISHED — FINAL RESULTS",
+            description=results_text,
+            color=discord.Color.gold()
+        )
+        final_embed.set_footer(text="Use /raceresults to claim your rewards!")
+
+        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=final_embed)
+
+        # Clean up so a new race can be created
+        del active_races[interaction.channel_id]
+        if interaction.channel_id in race_messages:
+            del race_messages[interaction.channel_id]
+
+        logger.info(f"Race finished via /simulatelap on {race.track}")
+        return
+
+    # Normal mid-race update — edit the stored race message to keep the channel clean
+    try:
+        stored_msg = race_messages.get(interaction.channel_id)
+        if stored_msg:
+            await stored_msg.edit(embed=embed)
+        else:
+            new_msg = await interaction.followup.send(embed=embed)
+            race_messages[interaction.channel_id] = new_msg
+    except discord.NotFound:
+        # Stored message was deleted — send a new one
+        new_msg = await interaction.followup.send(embed=embed)
+        race_messages[interaction.channel_id] = new_msg
+    except Exception as e:
+        logger.error(f"/simulatelap edit error: {e}")
+        await interaction.followup.send(embed=embed)
+
+    logger.info(
+        f"/simulatelap used by {interaction.user.name} — "
+        f"lap {race.current_lap}/{race.total_laps} on {race.track}"
+    )
 @bot.tree.command(name="startrace", description="Start the multiplayer race (host only)")
 async def startrace(interaction: discord.Interaction):
 
