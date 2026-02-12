@@ -2682,3 +2682,13 @@ async def user_info(ctx, user: discord.Member = None):
     embed.add_field(name="Roles", value=str(len(user.roles) - 1), inline=True)
     
     await safe_send(ctx, embed=embed)
+
+# # ============================================================================
+# RUN BOT
+# # ============================================================================
+
+if __name__ == "__main__":
+    token = os.getenv('DISCORD_TOKEN')  # or 'BOT_TOKEN' — be consistent!
+    if token is None:
+        raise ValueError("DISCORD_TOKEN environment variable not set!")
+    bot.run(token)
