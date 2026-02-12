@@ -2682,7 +2682,39 @@ async def user_info(ctx, user: discord.Member = None):
     embed.add_field(name="Roles", value=str(len(user.roles) - 1), inline=True)
     
     await safe_send(ctx, embed=embed)
+# Add this background task
+@tasks.loop(minutes=5)
+async def cleanup_processed_messages():
+    """Clean up processed messages set"""
+    if len(processed_messages) > 500:
+        processed_messages.clear()
 
+# Add to on_ready:
+@bot.event
+async def on_ready():
+    """Bot startup event"""
+    print(f'✅ {bot.user.name} is online!')
+    print(f'Bot ID: {bot.user.id}')
+    print(f'Prefix: {PREFIX}')
+    print('=' * 50)
+    
+    load_data()
+    
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name=f"{PREFIX}help | WWE Sage Bot"
+        )
+    )
+    
+    print(f'Loaded {len(user_data)} user profiles')
+    print(f'Loaded {len(match_history)} match records')
+    print('Bot is ready for action!')
+    
+    # Start background tasks
+    save_data_task.start()
+    cleanup_expired_challenges.start()
+    cleanup_processed_messages.start()  # Add this line
 # # ============================================================================
 # RUN BOT
 # # ============================================================================
