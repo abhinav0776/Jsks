@@ -1,4 +1,51 @@
-.git/
+# Dependencies
+node_modules/
+
+# Environment variables (Railway handles these)
 .env
+.env.local
+.env.production
+.env.test
+
+# Logs
+logs/
 *.log
+npm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Development files
+*.md
+.github/
+docs/
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.js
+*.spec.js
+
+# Coverage
+coverage/
+
+# Python (if not using)
 __pycache__/
+*.py
+requirements.txt
+
+# Docker (Railway builds its own)
+Dockerfile
+docker-compose.yml
+.dockerignore
