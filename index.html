@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="WWE Ultimate Card Battle - Multiplayer card game with Discord integration">
+    <meta name="keywords" content="WWE, card game, multiplayer, Discord, online game">
+    <meta name="author" content="WWE Card Battle Team">
+    <title>WWE Ultimate Card Battle - Multiplayer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+</head>
+<body>
+    <!-- Discord Login Screen -->
+    <div id="discordLogin" class="login-screen">
+        <div class="login-container">
+            <div class="wwe-logo-large">WWE</div>
+            <h1>ULTIMATE CARD BATTLE</h1>
+            <p class="subtitle">Multiplayer Edition</p>
+            <button class="discord-login-btn" onclick="multiplayer.loginWithDiscord()">
+                <svg class="discord-icon" viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z"/>
+                </svg>
+                Login with Discord
+            </button>
+            <button class="guest-btn" onclick="multiplayer.playAsGuest()">Play as Guest</button>
+            <div class="online-players">
+                <span class="pulse-dot"></span>
+                <span id="onlineCount">Loading...</span> Players Online
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen hidden">
+        <div class="loading-content">
+            <div class="wwe-logo">WWE</div>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+            <p class="loading-text">Loading Ultimate Card Battle...</p>
+        </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="mainMenu" class="main-menu hidden">
+        <div class="menu-background"></div>
+        
+        <!-- User Profile Header -->
+        <div class="user-profile-header">
+            <div class="user-avatar" id="userAvatar">👤</div>
+            <div class="user-info">
+                <h3 id="userName">Player</h3>
+                <p class="user-tag" id="userTag">#0000</p>
+                <div class="user-status">
+                    <span class="status-indicator online"></span>
+                    <span>Online</span>
+                </div>
+            </div>
+            <div class="user-stats-mini">
+                <div class="stat-mini">
+                    <span class="stat-icon">⭐</span>
+                    <span id="userLevel">1</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-icon">💰</span>
+                    <span id="userCurrency">1000</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-icon">🏆</span>
+                    <span id="userRank">Unranked</span>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="multiplayer.logout()">Logout</button>
+        </div>
+
+        <div class="menu-container">
+            <h1 class="game-title">WWE ULTIMATE CARD BATTLE</h1>
+            
+            <div class="menu-sections">
+                <!-- Multiplayer Section -->
+                <div class="menu-section multiplayer-section">
+                    <h2>🎮 Multiplayer</h2>
+                    <div class="menu-options">
+                        <button class="menu-btn primary" onclick="multiplayer.quickMatch()">
+                            <span class="btn-icon">⚡</span>
+                            <div class="btn-content">
+                                <span class="btn-title">Quick Match</span>
+                                <span class="btn-subtitle">Find random opponent</span>
+                            </div>
+                        </button>
+                        <button class="menu-btn primary" onclick="multiplayer.rankedMatch()">
+                            <span class="btn-icon">🏆</span>
+                            <div class="btn-content">
+                                <span class="btn-title">Ranked Match</span>
+                                <span class="btn-subtitle">Competitive play</span>
+                            </div>
+                        </button>
+                        <button class="menu-btn" onclick="multiplayer.showFriendsList()">
+                            <span class="btn-icon">👥</span>
+                            <div class="btn-content">
+                                <span class="btn-title">Friends</span>
+                                <span class="btn-subtitle">Challenge friends</span>
+                            </div>
+                            <span class="notification-badge" id="friendRequests">0</span>
+                        </button>
+                        <button class="menu-btn" onclick="multiplayer.createRoom()">
+                            <span class="btn-icon">🎪</span>
+                            <div class="btn-content">
+                                <span class="btn-title">Create Room</span>
+                                <span class="btn-subtitle">Custom match</span>
+                            </div>
+                        </button>
+                        <button class="menu-btn" onclick="multiplayer.joinRoom()">
+                            <span class="btn-icon">🚪</span>
+                            <div class="btn-content">
+                                <span class="btn-title">Join Room</span>
+                                <span class="btn-subtitle">Enter room code</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Single Player Section -->
+                <div class="menu-section">
+                    <h2>🎯 Single Player</h2>
+                    <div class="menu-options">
+                        <button class="menu-btn" onclick="game.startQuickMatch()">
+                            <span class="btn-icon">🤖</span>AI Battle
+                        </button>
+                        <button class="menu-btn" onclick="game.showTournament()">
+                            <span class="btn-icon">🏆</span>Tournament
+                        </button>
+                        <button class="menu-btn" onclick="game.showCampaign()">
+                            <span class="btn-icon">📖</span>Campaign
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Collection Section -->
+                <div class="menu-section">
+                    <h2>📚 Collection</h2>
+                    <div class="menu-options">
+                        <button class="menu-btn" onclick="game.showCardCollection()">
+                            <span class="btn-icon">🎴</span>My Cards
+                        </button>
+                        <button class="menu-btn" onclick="game.showDeckBuilder()">
+                            <span class="btn-icon">⚙️</span>Deck Builder
+                        </button>
+                        <button class="menu-btn" onclick="game.showShop()">
+                            <span class="btn-icon">🛒</span>Shop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Other Section -->
+                <div class="menu-section">
+                    <h2>⚙️ More</h2>
+                    <div class="menu-options">
+                        <button class="menu-btn" onclick="game.showLeaderboard()">
+                            <span class="btn-icon">📊</span>Leaderboard
+                        </button>
+                        <button class="menu-btn" onclick="game.showAchievements()">
+                            <span class="btn-icon">🎖️</span>Achievements
+                        </button>
+                        <button class="menu-btn" onclick="game.showSettings()">
+                            <span class="btn-icon">⚙️</span>Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Feed -->
+            <div class="activity-feed">
+                <h3>🔥 Recent Activity</h3>
+                <div id="activityList" class="activity-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matchmaking Screen -->
+    <div id="matchmakingScreen" class="screen hidden">
+        <div class="matchmaking-container">
+            <h2>Finding Opponent...</h2>
+            <div class="searching-animation">
+                <div class="radar-scanner"></div>
+                <div class="searching-text">Searching for worthy opponent...</div>
+            </div>
+            <div class="matchmaking-info">
+                <p>Mode: <span id="matchMode">Quick Match</span></p>
+                <p>Queue Time: <span id="queueTime">0:00</span></p>
+                <p>Players in Queue: <span id="queuePlayers">...</span></p>
+            </div>
+            <button class="cancel-btn" onclick="multiplayer.cancelMatchmaking()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Room Creation Screen -->
+    <div id="roomCreationScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Create Private Room</h2>
+            <button class="close-btn" onclick="multiplayer.closeRoomCreation()">✕</button>
+        </div>
+        <div class="room-creation-form">
+            <div class="form-group">
+                <label>Room Name</label>
+                <input type="text" id="roomName" placeholder="My WWE Arena" maxlength="30">
+            </div>
+            <div class="form-group">
+                <label>Password (Optional)</label>
+                <input type="password" id="roomPassword" placeholder="Leave empty for public">
+            </div>
+            <div class="form-group">
+                <label>Max Players</label>
+                <select id="maxPlayers">
+                    <option value="2">2 Players</option>
+                    <option value="4">4 Players (Tournament)</option>
+                    <option value="8">8 Players (Tournament)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Game Mode</label>
+                <select id="gameMode">
+                    <option value="standard">Standard Duel</option>
+                    <option value="tag_team">Tag Team</option>
+                    <option value="royal_rumble">Royal Rumble</option>
+                    <option value="elimination">Elimination</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Turn Time Limit</label>
+                <select id="turnTimeLimit">
+                    <option value="30">30 seconds</option>
+                    <option value="60">60 seconds</option>
+                    <option value="90">90 seconds</option>
+                    <option value="0">No Limit</option>
+                </select>
+            </div>
+            <button class="create-room-btn" onclick="multiplayer.confirmCreateRoom()">Create Room</button>
+        </div>
+    </div>
+
+    <!-- Room Lobby Screen -->
+    <div id="roomLobbyScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2 id="lobbyRoomName">Room Name</h2>
+            <div class="room-code">
+                Room Code: <span id="roomCode">XXXX</span>
+                <button class="copy-btn" onclick="multiplayer.copyRoomCode()">📋</button>
+            </div>
+            <button class="close-btn" onclick="multiplayer.leaveRoom()">✕</button>
+        </div>
+        <div class="lobby-container">
+            <div class="players-section">
+                <h3>Players (<span id="playerCount">1</span>/<span id="maxPlayerCount">2</span>)</h3>
+                <div id="lobbyPlayers" class="lobby-players"></div>
+            </div>
+            <div class="lobby-chat">
+                <h3>Chat</h3>
+                <div id="lobbyChatMessages" class="chat-messages"></div>
+                <div class="chat-input-container">
+                    <input type="text" id="lobbyChatInput" placeholder="Type a message..." onkeypress="multiplayer.sendChatMessage(event)">
+                    <button onclick="multiplayer.sendChatMessage()">Send</button>
+                </div>
+            </div>
+            <div class="lobby-settings">
+                <h3>Game Settings</h3>
+                <div id="lobbyGameSettings"></div>
+                <button class="start-game-btn" id="startGameBtn" onclick="multiplayer.startRoomGame()" disabled>
+                    Start Game
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Friends List Screen -->
+    <div id="friendsScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Friends & Social</h2>
+            <button class="close-btn" onclick="multiplayer.closeFriendsList()">✕</button>
+        </div>
+        <div class="friends-container">
+            <div class="friends-tabs">
+                <button class="tab-btn active" onclick="multiplayer.showFriendsTab('online')">Online</button>
+                <button class="tab-btn" onclick="multiplayer.showFriendsTab('all')">All Friends</button>
+                <button class="tab-btn" onclick="multiplayer.showFriendsTab('requests')">
+                    Requests <span class="tab-badge" id="requestsBadge">0</span>
+                </button>
+                <button class="tab-btn" onclick="multiplayer.showFriendsTab('add')">Add Friend</button>
+            </div>
+            <div class="friends-content">
+                <div id="friendsTabContent" class="friends-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Arena (Multiplayer Enhanced) -->
+    <div id="gameArena" class="game-arena hidden">
+        <!-- Connection Status -->
+        <div class="connection-status" id="connectionStatus">
+            <span class="status-dot"></span>
+            <span class="status-text">Connected</span>
+            <span class="ping" id="pingDisplay">0ms</span>
+        </div>
+
+        <!-- Top HUD -->
+        <div class="game-hud">
+            <div class="player-info left">
+                <div class="player-avatar" id="playerAvatar">👤</div>
+                <div class="player-details">
+                    <h3 id="playerName">Player</h3>
+                    <p class="player-rank" id="playerRankDisplay"></p>
+                    <div class="health-bar">
+                        <div class="health-fill" id="playerHealth" style="width: 100%"></div>
+                        <span class="health-text" id="playerHealthText">100/100</span>
+                    </div>
+                    <div class="energy-bar">
+                        <div class="energy-fill" id="playerEnergy" style="width: 100%"></div>
+                        <span class="energy-text" id="playerEnergyText">10/10</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="match-info">
+                <div class="game-mode-badge" id="gameModeBadge">Multiplayer</div>
+                <div class="round-counter" id="roundCounter">Round 1</div>
+                <div class="turn-indicator" id="turnIndicator">Your Turn</div>
+                <div class="timer" id="turnTimer">30</div>
+            </div>
+
+            <div class="player-info right">
+                <div class="player-details">
+                    <h3 id="opponentName">Opponent</h3>
+                    <p class="player-rank" id="opponentRankDisplay"></p>
+                    <div class="health-bar">
+                        <div class="health-fill" id="opponentHealth" style="width: 100%"></div>
+                        <span class="health-text" id="opponentHealthText">100/100</span>
+                    </div>
+                    <div class="energy-bar">
+                        <div class="energy-fill" id="opponentEnergy" style="width: 100%"></div>
+                        <span class="energy-text" id="opponentEnergyText">10/10</span>
+                    </div>
+                </div>
+                <div class="player-avatar" id="opponentAvatar">🤖</div>
+            </div>
+        </div>
+
+        <!-- Battle Arena -->
+        <div class="battle-arena">
+            <!-- Opponent's Field -->
+            <div class="card-field opponent-field">
+                <div class="field-label">Opponent's Ring</div>
+                <div class="active-cards" id="opponentActiveCards">
+                    <div class="card-slot" data-slot="0"></div>
+                    <div class="card-slot" data-slot="1"></div>
+                    <div class="card-slot" data-slot="2"></div>
+                </div>
+                <div class="deck-info">
+                    <div class="deck-count" id="opponentDeckCount">20</div>
+                    <div class="graveyard-count" id="opponentGraveyardCount">0</div>
+                </div>
+            </div>
+
+            <!-- Center Ring -->
+            <div class="center-ring">
+                <div class="ring-canvas" id="ringCanvas">
+                    <div class="ring-ropes"></div>
+                    <div class="ring-mat"></div>
+                    <canvas id="effectsCanvas" class="effects-canvas"></canvas>
+                </div>
+                <div class="action-buttons">
+                    <button class="action-btn" id="attackBtn" onclick="game.initiateAttack()">
+                        <span class="btn-icon">⚔️</span>Attack
+                    </button>
+                    <button class="action-btn" id="defendBtn" onclick="game.setDefense()">
+                        <span class="btn-icon">🛡️</span>Defend
+                    </button>
+                    <button class="action-btn" id="specialBtn" onclick="game.useSpecial()">
+                        <span class="btn-icon">💥</span>Special
+                    </button>
+                    <button class="action-btn" id="endTurnBtn" onclick="game.endTurn()">
+                        <span class="btn-icon">⏭️</span>End Turn
+                    </button>
+                </div>
+                <!-- Emote Wheel -->
+                <button class="emote-btn" onclick="multiplayer.showEmoteWheel()">😊</button>
+            </div>
+
+            <!-- Player's Field -->
+            <div class="card-field player-field">
+                <div class="field-label">Your Ring</div>
+                <div class="active-cards" id="playerActiveCards">
+                    <div class="card-slot" data-slot="0"></div>
+                    <div class="card-slot" data-slot="1"></div>
+                    <div class="card-slot" data-slot="2"></div>
+                </div>
+                <div class="deck-info">
+                    <div class="deck-count" id="playerDeckCount">20</div>
+                    <div class="graveyard-count" id="playerGraveyardCount">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Hand -->
+        <div class="hand-container">
+            <div class="hand-cards" id="playerHand"></div>
+        </div>
+
+        <!-- In-Game Chat -->
+        <div class="game-chat" id="gameChat">
+            <div class="chat-toggle" onclick="multiplayer.toggleGameChat()">💬</div>
+            <div class="chat-panel hidden" id="chatPanel">
+                <div class="chat-header">Chat</div>
+                <div class="chat-messages" id="gameChatMessages"></div>
+                <input type="text" class="chat-input" id="gameChatInput" placeholder="Type..." onkeypress="multiplayer.sendGameChat(event)">
+            </div>
+        </div>
+
+        <!-- Combat Log -->
+        <div class="combat-log" id="combatLog">
+            <div class="log-header">Combat Log</div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <!-- Emote Wheel -->
+    <div id="emoteWheel" class="emote-wheel hidden">
+        <div class="emote-option" onclick="multiplayer.sendEmote('gg')">GG</div>
+        <div class="emote-option" onclick="multiplayer.sendEmote('nice')">Nice!</div>
+        <div class="emote-option" onclick="multiplayer.sendEmote('oops')">Oops</div>
+        <div class="emote-option" onclick="multiplayer.sendEmote('thinking')">🤔</div>
+        <div class="emote-option" onclick="multiplayer.sendEmote('wow')">Wow!</div>
+        <div class="emote-option" onclick="multiplayer.sendEmote('thanks')">Thanks</div>
+    </div>
+
+    <!-- Leaderboard Screen -->
+    <div id="leaderboardScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Global Leaderboard</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="leaderboard-tabs">
+            <button class="tab-btn active" onclick="game.showLeaderboardTab('global')">Global</button>
+            <button class="tab-btn" onclick="game.showLeaderboardTab('friends')">Friends</button>
+            <button class="tab-btn" onclick="game.showLeaderboardTab('regional')">Regional</button>
+        </div>
+        <div class="leaderboard-container" id="leaderboardContent"></div>
+        <div class="your-rank">
+            Your Rank: <span id="yourRankPosition">#---</span>
+        </div>
+    </div>
+
+    <!-- Card Collection Screen -->
+    <div id="collectionScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Card Collection</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="collection-filters">
+            <select id="rarityFilter" onchange="game.filterCollection()">
+                <option value="all">All Rarities</option>
+                <option value="common">Common</option>
+                <option value="rare">Rare</option>
+                <option value="epic">Epic</option>
+                <option value="legendary">Legendary</option>
+                <option value="mythic">Mythic</option>
+            </select>
+            <select id="typeFilter" onchange="game.filterCollection()">
+                <option value="all">All Types</option>
+                <option value="superstar">Superstar</option>
+                <option value="action">Action</option>
+                <option value="finisher">Finisher</option>
+                <option value="support">Support</option>
+                <option value="counter">Counter</option>
+            </select>
+            <input type="text" id="searchBox" placeholder="Search cards..." oninput="game.searchCards()">
+        </div>
+        <div class="collection-grid" id="collectionGrid"></div>
+        <div class="collection-stats">
+            <div class="stat">Total Cards: <span id="collectionTotal">0</span></div>
+            <div class="stat">Unique Cards: <span id="collectionUnique">0</span></div>
+            <div class="stat">Completion: <span id="collectionCompletion">0%</span></div>
+        </div>
+    </div>
+
+    <!-- Deck Builder Screen -->
+    <div id="deckBuilderScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Deck Builder</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="deck-builder-container">
+            <div class="deck-list">
+                <h3>Your Decks</h3>
+                <div id="decksList"></div>
+                <button class="create-deck-btn" onclick="game.createNewDeck()">+ New Deck</button>
+            </div>
+            <div class="deck-editor">
+                <div class="deck-header">
+                    <input type="text" id="deckName" placeholder="Deck Name">
+                    <span class="deck-count"><span id="currentDeckCount">0</span>/40</span>
+                </div>
+                <div class="deck-stats">
+                    <div class="stat-bar">
+                        <label>Avg Cost: <span id="avgCost">0</span></label>
+                        <div class="cost-curve" id="costCurve"></div>
+                    </div>
+                </div>
+                <div class="current-deck" id="currentDeck"></div>
+                <button class="save-deck-btn" onclick="game.saveDeck()">Save Deck</button>
+                <button class="share-deck-btn" onclick="multiplayer.shareDeck()">Share to Discord</button>
+            </div>
+            <div class="card-selector">
+                <h3>Available Cards</h3>
+                <div class="selector-filters">
+                    <select id="builderRarityFilter" onchange="game.filterBuilderCards()">
+                        <option value="all">All Rarities</option>
+                        <option value="common">Common</option>
+                        <option value="rare">Rare</option>
+                        <option value="epic">Epic</option>
+                        <option value="legendary">Legendary</option>
+                    </select>
+                </div>
+                <div class="builder-cards" id="builderCards"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Screen -->
+    <div id="shopScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Card Shop</h2>
+            <div class="currency-display">
+                <span class="currency-icon">💰</span>
+                <span id="shopCurrency">1000</span>
+            </div>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="shop-container">
+            <div class="shop-section">
+                <h3>Card Packs</h3>
+                <div class="pack-grid">
+                    <div class="pack-item" onclick="game.buyPack('bronze')">
+                        <div class="pack-image bronze-pack">📦</div>
+                        <h4>Bronze Pack</h4>
+                        <p>5 Cards (Common-Rare)</p>
+                        <button class="buy-btn">100 💰</button>
+                    </div>
+                    <div class="pack-item" onclick="game.buyPack('silver')">
+                        <div class="pack-image silver-pack">📦</div>
+                        <h4>Silver Pack</h4>
+                        <p>5 Cards (Rare-Epic)</p>
+                        <button class="buy-btn">250 💰</button>
+                    </div>
+                    <div class="pack-item" onclick="game.buyPack('gold')">
+                        <div class="pack-image gold-pack">📦</div>
+                        <h4>Gold Pack</h4>
+                        <p>5 Cards (Epic-Legendary)</p>
+                        <button class="buy-btn">500 💰</button>
+                    </div>
+                    <div class="pack-item" onclick="game.buyPack('premium')">
+                        <div class="pack-image premium-pack">🎁</div>
+                        <h4>Premium Pack</h4>
+                        <p>10 Cards (All Rarities)</p>
+                        <button class="buy-btn">1000 💰</button>
+                    </div>
+                </div>
+            </div>
+            <div class="shop-section">
+                <h3>Daily Deals</h3>
+                <div id="dailyDeals" class="deals-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tournament Screen -->
+    <div id="tournamentScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Tournament Mode</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="tournament-container">
+            <div class="tournament-bracket" id="tournamentBracket"></div>
+            <div class="tournament-info">
+                <h3>Current Tournament</h3>
+                <div id="tournamentDetails"></div>
+                <button class="start-tournament-btn" onclick="game.startTournament()">Enter Tournament</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Achievements Screen -->
+    <div id="achievementsScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Achievements</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="achievements-container" id="achievementsContainer"></div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settingsScreen" class="screen hidden">
+        <div class="screen-header">
+            <h2>Settings</h2>
+            <button class="close-btn" onclick="game.showMainMenu()">✕</button>
+        </div>
+        <div class="settings-container">
+            <div class="settings-section">
+                <h3>Audio</h3>
+                <div class="setting-item">
+                    <label>Master Volume</label>
+                    <input type="range" id="masterVolume" min="0" max="100" value="70">
+                    <span id="masterVolumeValue">70</span>
+                </div>
+                <div class="setting-item">
+                    <label>Music Volume</label>
+                    <input type="range" id="musicVolume" min="0" max="100" value="50">
+                    <span id="musicVolumeValue">50</span>
+                </div>
+                <div class="setting-item">
+                    <label>SFX Volume</label>
+                    <input type="range" id="sfxVolume" min="0" max="100" value="80">
+                    <span id="sfxVolumeValue">80</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Graphics</h3>
+                <div class="setting-item">
+                    <label>Animation Quality</label>
+                    <select id="animationQuality">
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                        <option value="off">Off</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>Particle Effects</label>
+                    <input type="checkbox" id="particleEffects" checked>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Gameplay</h3>
+                <div class="setting-item">
+                    <label>Auto-End Turn</label>
+                    <input type="checkbox" id="autoEndTurn">
+                </div>
+                <div class="setting-item">
+                    <label>Show Damage Numbers</label>
+                    <input type="checkbox" id="showDamage" checked>
+                </div>
+                <div class="setting-item">
+                    <label>Card Tooltips</label>
+                    <input type="checkbox" id="cardTooltips" checked>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Discord Integration</h3>
+                <div class="setting-item">
+                    <label>Rich Presence</label>
+                    <input type="checkbox" id="richPresence" checked>
+                </div>
+                <div class="setting-item">
+                    <label>Match Notifications</label>
+                    <input type="checkbox" id="matchNotifications" checked>
+                </div>
+                <div class="setting-item">
+                    <label>Friend Requests</label>
+                    <input type="checkbox" id="friendRequestsToggle" checked>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pack Opening Screen -->
+    <div id="packOpeningScreen" class="screen hidden">
+        <div class="pack-opening-animation">
+            <div class="pack-visual" id="packVisual">🎁</div>
+            <button class="reveal-btn" id="revealBtn" onclick="game.revealCards()">Reveal Cards</button>
+            <div class="revealed-cards" id="revealedCards"></div>
+        </div>
+    </div>
+
+    <!-- Victory/Defeat Screen -->
+    <div id="resultScreen" class="screen hidden">
+        <div class="result-container">
+            <h2 class="result-title" id="resultTitle">Victory!</h2>
+            <div class="result-opponent" id="resultOpponent"></div>
+            <div class="result-stats" id="resultStats"></div>
+            <div class="result-rewards" id="resultRewards"></div>
+            <div class="rank-change" id="rankChange"></div>
+            <div class="result-buttons">
+                <button class="rematch-btn" id="rematchBtn" onclick="multiplayer.requestRematch()">Rematch</button>
+                <button class="continue-btn" onclick="game.returnToMenu()">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification System -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <!-- Card Detail Modal -->
+    <div id="cardDetailModal" class="modal hidden">
+        <div class="modal-content">
+            <button class="modal-close" onclick="game.closeCardDetail()">✕</button>
+            <div class="card-detail-view" id="cardDetailView"></div>
+        </div>
+    </div>
+
+    <!-- Particle Effects Container -->
+    <canvas id="particleCanvas" class="particle-canvas"></canvas>
+
+    <!-- Audio Elements -->
+    <audio id="bgMusic" loop></audio>
+    <audio id="sfxChannel1"></audio>
+    <audio id="sfxChannel2"></audio>
+    <audio id="sfxChannel3"></audio>
+
+    <!-- Scripts -->
+    <script src="game.js"></script>
+    <script src="multiplayer.js"></script>
+</body>
+          </html>
