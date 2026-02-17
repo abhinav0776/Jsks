@@ -1,8 +1,14 @@
 [phases.setup]
-nixPkgs = ["python39"]
+nixPkgs = ["nodejs-18_x", "npm-9_x"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["npm ci --omit=dev"]
+
+[phases.build]
+cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "python bot.py"
+cmd = "node server.js"
+
+[variables]
+NODE_ENV = "production"
